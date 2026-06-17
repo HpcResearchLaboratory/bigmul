@@ -1,0 +1,19 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    - -xc++
+    - -std=c++20
+    - -I/opt/nvidia/hpc_sdk/Linux_x86_64/26.3/cuda/13.1/include
+    - -include
+    - cuda_runtime.h
+    - -Wno-unknown-cuda-version
+  Remove:
+    - -forward-unknown-to-host-compiler
+    - -allow-unsupported-compiler
+    - --generate-code*
+    - -ccbin
+    - -arch*
+    - -Xcompiler*
+Diagnostics:
+  Suppress:
+    - pp_file_not_found
