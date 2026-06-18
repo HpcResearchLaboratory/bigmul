@@ -1,32 +1,73 @@
 #include "bigmul/bigmul.cuh"
 
 #include <cstring>
+#include <vector>
 
-__global__ void bigmul_kernel(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
-  // TODO: implement multiplication with carry propagation
+__global__ void bigmul_kernel(const uint32_t* a, const uint32_t* b,
+                              uint64_t* partial_lo, uint64_t* partial_hi, int n) {
+  int k = blockIdx.x * blockDim.x + threadIdx.x;
+  if (k >= 2 * n) return;
+
+  int j_start = (k >= n) ? (k - n + 1) : 0;
+  int j_end = (k < n) ? k : (n - 1);
+
+  uint64_t acc_lo = 0, acc_hi = 0;
+  for (int j = j_start; j <= j_end; j++) {
+    uint64_t prod = (uint64_t)a[j] * (uint64_t)b[k - j];
+    uint64_t prev = acc_lo;
+    acc_lo += prod;
+    if (acc_lo < prev) acc_hi++;
+  }
+
+  partial_lo[k] = acc_lo;
+  partial_hi[k] = acc_hi;
+}
+
+static void carry_propagate(const uint64_t* partial_lo, const uint64_t* partial_hi,
+                            uint32_t* result, int n) {
+  uint64_t carry_lo = 0, carry_hi = 0;
+  for (int k = 0; k < 2 * n; k++) {
+    uint64_t sum_lo = partial_lo[k] + carry_lo;
+    uint64_t sum_hi = partial_hi[k] + carry_hi + (sum_lo < partial_lo[k] ? 1 : 0);
+
+    result[k] = (uint32_t)(sum_lo & 0xFFFFFFFF);
+
+    carry_lo = (sum_lo >> 32) | (sum_hi << 32);
+    carry_hi = sum_hi >> 32;
+  }
 }
 
 void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
-  uint32_t *d_a, *d_b, *d_result;
-  size_t bytes = n * sizeof(uint32_t);
+  uint32_t *d_a, *d_b;
+  uint64_t *d_partial_lo, *d_partial_hi;
+  size_t input_bytes = n * sizeof(uint32_t);
+  size_t partial_bytes = 2 * n * sizeof(uint64_t);
 
-  cudaMalloc(&d_a, bytes);
-  cudaMalloc(&d_b, bytes);
-  cudaMalloc(&d_result, 2 * n * sizeof(uint32_t));
+  cudaMalloc(&d_a, input_bytes);
+  cudaMalloc(&d_b, input_bytes);
+  cudaMalloc(&d_partial_lo, partial_bytes);
+  cudaMalloc(&d_partial_hi, partial_bytes);
 
-  cudaMemcpy(d_a, a, bytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_b, b, bytes, cudaMemcpyHostToDevice);
-  cudaMemset(d_result, 0, 2 * n * sizeof(uint32_t));
+  cudaMemcpy(d_a, a, input_bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, input_bytes, cudaMemcpyHostToDevice);
+  cudaMemset(d_partial_lo, 0, partial_bytes);
+  cudaMemset(d_partial_hi, 0, partial_bytes);
 
   int threads = 256;
-  int blocks = (n + threads - 1) / threads;
-  bigmul_kernel<<<blocks, threads>>>(d_a, d_b, d_result, n);
+  int blocks = (2 * n + threads - 1) / threads;
+  bigmul_kernel<<<blocks, threads>>>(d_a, d_b, d_partial_lo, d_partial_hi, n);
 
-  cudaMemcpy(result, d_result, 2 * n * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+  std::vector<uint64_t> h_partial_lo(2 * n);
+  std::vector<uint64_t> h_partial_hi(2 * n);
+  cudaMemcpy(h_partial_lo.data(), d_partial_lo, partial_bytes, cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_partial_hi.data(), d_partial_hi, partial_bytes, cudaMemcpyDeviceToHost);
+
+  carry_propagate(h_partial_lo.data(), h_partial_hi.data(), result, n);
 
   cudaFree(d_a);
   cudaFree(d_b);
-  cudaFree(d_result);
+  cudaFree(d_partial_lo);
+  cudaFree(d_partial_hi);
 }
 
 void bigmul_cpu(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {

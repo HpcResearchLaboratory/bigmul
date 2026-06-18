@@ -23,5 +23,8 @@ auto main() -> int {
   for (const auto& r : gpu_result) std::cout << std::format(" {:08X}", r);
   std::cout << '\n';
 
-  return 0;
+  bool match = (cpu_result == gpu_result);
+  std::cout << (match ? "MATCH" : "MISMATCH") << '\n';
+
+  return match ? 0 : 1;
 }
