@@ -16,10 +16,13 @@ MULTIPLY_OBJS = $(patsubst src/%.cu,build/%.o,$(shell find src/multiply -name '*
 TEST         := build/bin/test
 TEST_OBJS     = $(patsubst src/%.cu,build/%.o,$(shell find src/test -name '*.cu'))
 
+BENCH        := build/bin/bench
+BENCH_OBJS    = $(patsubst src/%.cu,build/%.o,$(shell find src/bench -name '*.cu'))
+
 BIGMUL       := build/lib/libbigmul.a
 BIGMUL_OBJS   = $(patsubst src/%.cu,build/%.o,$(shell find src/bigmul -name '*.cu'))
 
-.PHONY: all clean run test install uninstall compdb
+.PHONY: all clean run test bench install uninstall compdb
 
 all: $(MULTIPLY)
 
@@ -28,6 +31,9 @@ run: $(MULTIPLY)
 
 test: $(TEST)
 	@./$<
+
+bench: $(BENCH)
+	@./$< $(ARGS)
 
 clean:
 	@rm -rf build
@@ -57,6 +63,11 @@ $(TEST): $(TEST_OBJS) $(BIGMUL)
 	@echo "LD   $@"
 	@$(NVCC) $(NVCCFLAGS) $(TEST_OBJS) -Lbuild/lib -lbigmul -o $@
 
+$(BENCH): $(BENCH_OBJS) $(BIGMUL)
+	@mkdir -p $(@D)
+	@echo "LD   $@"
+	@$(NVCC) $(NVCCFLAGS) $(BENCH_OBJS) -Lbuild/lib -lbigmul -o $@
+
 $(BIGMUL): $(BIGMUL_OBJS)
 	@mkdir -p $(@D)
 	@echo "AR   $@"
@@ -67,4 +78,4 @@ build/%.o: src/%.cu
 	@echo "NVCC $<"
 	@$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
 
--include $(MULTIPLY_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(BIGMUL_OBJS:.o=.d)
+-include $(MULTIPLY_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(BENCH_OBJS:.o=.d) $(BIGMUL_OBJS:.o=.d)
