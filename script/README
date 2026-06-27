@@ -1,0 +1,23 @@
+SLURM scripts for running benchmarks on a GPU cluster.
+
+run-sbatch
+    sbatch job script. Compiles, runs benchmark, saves CSV to results/<job_id>/.
+
+submit
+    Helper to submit from a local machine through an SSH proxy.
+
+    Required env vars:
+        PROXY_HOST   - SSH proxy/bastion hostname
+        REMOTE_DIR   - path to the project on the cluster
+
+    Optional:
+        CLUSTER_HOST - if the cluster login node differs from the proxy
+        PARTITION    - SLURM partition (default: gpu)
+        ACCOUNT      - SLURM account
+        MAX_N        - max limb count for benchmark sweep (default: 1048576)
+        ITERS        - benchmark iterations (default: 5)
+        WARMUP       - warmup runs (default: 2)
+
+    Example:
+        PROXY_HOST=bastion.example.com REMOTE_DIR=~/bigmul ./script/submit
+        PROXY_HOST=bastion CLUSTER_HOST=gpu-login REMOTE_DIR=/scratch/$USER/bigmul ./script/submit

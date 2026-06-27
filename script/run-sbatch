@@ -1,0 +1,37 @@
+#!/bin/bash
+#SBATCH --job-name=bigmul-bench
+#SBATCH --partition=${PARTITION:-gpu}
+#SBATCH --account=${ACCOUNT:-default}
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=02:00:00
+#SBATCH --output=results/%j/slurm.out
+#SBATCH --error=results/%j/slurm.err
+
+set -euo pipefail
+
+module load cuda 2>/dev/null || true
+
+RESULTS_DIR="results/${SLURM_JOB_ID}"
+mkdir -p "${RESULTS_DIR}"
+
+nvidia-smi | tee "${RESULTS_DIR}/gpu-info.txt"
+
+make clean
+make bench
+
+MAX_N="${MAX_N:-1048576}"
+ITERS="${ITERS:-5}"
+WARMUP="${WARMUP:-2}"
+
+./build/bin/bench \
+    --max-n "${MAX_N}" \
+    --iters "${ITERS}" \
+    --warmup "${WARMUP}" \
+    > "${RESULTS_DIR}/bench.csv" \
+    2> "${RESULTS_DIR}/device.txt"
+
+echo "results saved to ${RESULTS_DIR}/"
+cat "${RESULTS_DIR}/bench.csv"
