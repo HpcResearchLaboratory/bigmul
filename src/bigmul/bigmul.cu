@@ -21,13 +21,13 @@ void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
 
   uint32_t *d_a, *d_b, *d_c;
   size_t bytes = m * sizeof(uint32_t);
-  CHECK_CUDA(cudaMalloc(&d_a, bytes));
-  CHECK_CUDA(cudaMalloc(&d_b, bytes));
-  CHECK_CUDA(cudaMalloc(&d_c, bytes));
+  check_cuda(cudaMalloc(&d_a, bytes));
+  check_cuda(cudaMalloc(&d_b, bytes));
+  check_cuda(cudaMalloc(&d_c, bytes));
 
   for (int pi = 0; pi < 3; pi++) {
-    CHECK_CUDA(cudaMemcpy(d_a, da.data(), bytes, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(d_b, db.data(), bytes, cudaMemcpyHostToDevice));
+    check_cuda(cudaMemcpy(d_a, da.data(), bytes, cudaMemcpyHostToDevice));
+    check_cuda(cudaMemcpy(d_b, db.data(), bytes, cudaMemcpyHostToDevice));
 
     ntt_forward(d_a, m, primes[pi]);
     ntt_forward(d_b, m, primes[pi]);
@@ -35,13 +35,13 @@ void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
     ntt_inverse(d_c, m, primes[pi]);
 
     res[pi].resize(m);
-    CHECK_CUDA(
+    check_cuda(
         cudaMemcpy(res[pi].data(), d_c, bytes, cudaMemcpyDeviceToHost));
   }
 
-  CHECK_CUDA(cudaFree(d_a));
-  CHECK_CUDA(cudaFree(d_b));
-  CHECK_CUDA(cudaFree(d_c));
+  check_cuda(cudaFree(d_a));
+  check_cuda(cudaFree(d_b));
+  check_cuda(cudaFree(d_c));
 
   uint32_t p1 = NTT_P1.p, p2 = NTT_P2.p, p3 = NTT_P3.p;
   uint32_t p1_inv_p2 = mod_pow_host(p1, p2 - 2, p2);

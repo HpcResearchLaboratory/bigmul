@@ -84,23 +84,23 @@ static void ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) {
     tw[i] = (uint64_t)tw[i - 1] * w % p;
 
   uint32_t* d_tw;
-  CHECK_CUDA(cudaMalloc(&d_tw, n * sizeof(uint32_t)));
-  CHECK_CUDA(
+  check_cuda(cudaMalloc(&d_tw, n * sizeof(uint32_t)));
+  check_cuda(
       cudaMemcpy(d_tw, tw.data(), n * sizeof(uint32_t), cudaMemcpyHostToDevice));
 
   int threads = 256;
   bit_reverse_permute<<<(n + threads - 1) / threads, threads>>>(d_data, n,
                                                                  log_n);
-  CHECK_CUDA(cudaGetLastError());
+  check_cuda(cudaGetLastError());
 
   for (int stage = 0; stage < log_n; stage++) {
     butterfly<<<(n / 2 + threads - 1) / threads, threads>>>(d_data, d_tw, stage,
                                                              n, p);
-    CHECK_CUDA(cudaGetLastError());
+    check_cuda(cudaGetLastError());
   }
 
-  CHECK_CUDA(cudaDeviceSynchronize());
-  CHECK_CUDA(cudaFree(d_tw));
+  check_cuda(cudaDeviceSynchronize());
+  check_cuda(cudaFree(d_tw));
 }
 
 void ntt_forward(uint32_t* d_data, int n, const NttPrime& prime) {
@@ -117,8 +117,8 @@ void ntt_inverse(uint32_t* d_data, int n, const NttPrime& prime) {
   int threads = 256;
   scale_mod<<<(n + threads - 1) / threads, threads>>>(d_data, n, n_inv,
                                                        prime.p);
-  CHECK_CUDA(cudaGetLastError());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  check_cuda(cudaGetLastError());
+  check_cuda(cudaDeviceSynchronize());
 }
 
 void ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a,
@@ -126,6 +126,6 @@ void ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a,
   int threads = 256;
   pointwise_mul<<<(n + threads - 1) / threads, threads>>>(d_out, d_a, d_b, n,
                                                            p);
-  CHECK_CUDA(cudaGetLastError());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  check_cuda(cudaGetLastError());
+  check_cuda(cudaDeviceSynchronize());
 }

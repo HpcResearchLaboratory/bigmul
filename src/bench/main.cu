@@ -19,23 +19,23 @@ static void bench(int n, int warmup, int iters) {
     bigmul(a.data(), b.data(), result.data(), n);
 
   cudaEvent_t start, stop;
-  CHECK_CUDA(cudaEventCreate(&start));
-  CHECK_CUDA(cudaEventCreate(&stop));
+  check_cuda(cudaEventCreate(&start));
+  check_cuda(cudaEventCreate(&stop));
 
-  CHECK_CUDA(cudaEventRecord(start));
+  check_cuda(cudaEventRecord(start));
   for (int i = 0; i < iters; i++)
     bigmul(a.data(), b.data(), result.data(), n);
-  CHECK_CUDA(cudaEventRecord(stop));
-  CHECK_CUDA(cudaEventSynchronize(stop));
+  check_cuda(cudaEventRecord(stop));
+  check_cuda(cudaEventSynchronize(stop));
 
   float total_ms = 0;
-  CHECK_CUDA(cudaEventElapsedTime(&total_ms, start, stop));
+  check_cuda(cudaEventElapsedTime(&total_ms, start, stop));
   float avg_ms = total_ms / iters;
 
   std::cout << std::format("{},{:.4f}\n", n, avg_ms);
 
-  CHECK_CUDA(cudaEventDestroy(start));
-  CHECK_CUDA(cudaEventDestroy(stop));
+  check_cuda(cudaEventDestroy(start));
+  check_cuda(cudaEventDestroy(stop));
 }
 
 auto main(int argc, char** argv) -> int {
@@ -54,7 +54,7 @@ auto main(int argc, char** argv) -> int {
   }
 
   cudaDeviceProp prop;
-  CHECK_CUDA(cudaGetDeviceProperties(&prop, 0));
+  check_cuda(cudaGetDeviceProperties(&prop, 0));
   std::cerr << std::format("device: {} (compute {}.{})\n", prop.name,
                            prop.major, prop.minor);
 
