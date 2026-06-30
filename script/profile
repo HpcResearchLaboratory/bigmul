@@ -1,0 +1,90 @@
+#!/bin/bash
+set -euo pipefail
+
+TAG="${1:?usage: script/profile <tag> [--max-n N]}"
+shift
+
+MAX_N=65536
+NCU_MAX_N=4096
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --max-n)     MAX_N="$2"; shift 2;;
+        --ncu-max-n) NCU_MAX_N="$2"; shift 2;;
+        *) echo "unknown arg: $1"; exit 1;;
+    esac
+done
+
+CLUSTER="pcad"
+REMOTE_DIR="~/bigmul"
+SIF='${HOME}/.singularity/nvhpc.sif'
+LOCAL_RESULTS="results/${TAG}"
+
+COMMIT=$(git rev-parse --short HEAD)
+
+echo "=== ${TAG} (${COMMIT}) ==="
+
+gen_hex() {
+    local bytes=$1
+    openssl rand -hex "$bytes" | tr '[:lower:]' '[:upper:]'
+}
+
+echo "syncing code..."
+rsync -az --exclude='build/' --exclude='.cache/' --exclude='config.mk' \
+    --exclude='results/' ./ "${CLUSTER}:${REMOTE_DIR}/"
+
+echo "building + profiling on grace..."
+ssh "${CLUSTER}" "srun -p grace --gres=gpu:1 --cpus-per-task=4 --mem=16G --time=00:30:00 bash -c '
+    cd ${REMOTE_DIR}
+    mkdir -p results/${TAG}
+
+    RUN=\"singularity exec --nv --bind \$(pwd):\$(pwd) --pwd \$(pwd) ${SIF}\"
+
+    echo \"NVCCFLAGS = -O2 -std=c++20 -arch=sm_89\" > config.mk
+    \${RUN} make clean
+    \${RUN} make all
+
+    \${RUN} make test
+    echo TEST_OK
+
+    nvidia-smi > results/${TAG}/gpu-info.txt
+
+    gen_hex() { openssl rand -hex \$1 | tr \"[:lower:]\" \"[:upper:]\"; }
+
+    echo \"running nsys (n up to ${MAX_N} limbs)...\"
+    nsys profile -o results/${TAG}/nsys --force-overwrite true bash -c \"
+        for p in 6 7 8 9 10 11 12 13 14 15 16; do
+            n=\\\$((1 << p))
+            [ \\\$n -gt ${MAX_N} ] && break
+            bytes=\\\$((n * 4))
+            a=\\\$(gen_hex \\\$bytes)
+            b=\\\$(gen_hex \\\$bytes)
+            \${RUN} ./build/bin/multiply \\\$a \\\$b > /dev/null
+        done
+    \"
+
+    echo \"running ncu (n up to ${NCU_MAX_N} limbs)...\"
+    n=${NCU_MAX_N}
+    bytes=\$((n * 4))
+    a=\$(gen_hex \$bytes)
+    b=\$(gen_hex \$bytes)
+    ncu --set full -o results/${TAG}/ncu --force \
+        \${RUN} ./build/bin/multiply \$a \$b > /dev/null
+
+    nsys stats results/${TAG}/nsys.nsys-rep > results/${TAG}/nsys-summary.txt 2>&1 || true
+
+    echo ${COMMIT} > results/${TAG}/commit.txt
+    echo DONE
+'"
+
+echo "fetching results..."
+mkdir -p "${LOCAL_RESULTS}"
+rsync -az "${CLUSTER}:${REMOTE_DIR}/results/${TAG}/" "${LOCAL_RESULTS}/"
+
+echo ""
+echo "=== results ==="
+echo "  ${LOCAL_RESULTS}/nsys.nsys-rep    (open with nsys-ui)"
+echo "  ${LOCAL_RESULTS}/ncu.ncu-rep      (open with ncu-ui)"
+echo "  ${LOCAL_RESULTS}/nsys-summary.txt"
+echo "  ${LOCAL_RESULTS}/gpu-info.txt"
+echo "  commit: ${COMMIT}"
