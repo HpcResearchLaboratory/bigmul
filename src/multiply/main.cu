@@ -7,7 +7,7 @@
 
 #include "bigmul/bigmul.cuh"
 
-static std::vector<uint32_t> hex_to_limbs(const std::string& hex) {
+static auto hex_to_limbs(const std::string& hex) -> std::vector<uint32_t> {
   std::vector<uint32_t> limbs;
   int len = hex.size();
   for (int i = len; i > 0; i -= 8) {
@@ -18,7 +18,7 @@ static std::vector<uint32_t> hex_to_limbs(const std::string& hex) {
   return limbs;
 }
 
-static std::string limbs_to_hex(const uint32_t* limbs, int n) {
+static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
   int top = n - 1;
   while (top > 0 && limbs[top] == 0) top--;
 

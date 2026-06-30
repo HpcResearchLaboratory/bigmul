@@ -3,20 +3,20 @@
 
 #include <vector>
 
-__device__ uint32_t mod_mul(uint32_t a, uint32_t b, uint32_t p) {
+__device__ auto mod_mul(uint32_t a, uint32_t b, uint32_t p) -> uint32_t {
   return (uint64_t)a * b % p;
 }
 
-__device__ uint32_t mod_add(uint32_t a, uint32_t b, uint32_t p) {
+__device__ auto mod_add(uint32_t a, uint32_t b, uint32_t p) -> uint32_t {
   uint32_t r = a + b;
   return r >= p ? r - p : r;
 }
 
-__device__ uint32_t mod_sub(uint32_t a, uint32_t b, uint32_t p) {
+__device__ auto mod_sub(uint32_t a, uint32_t b, uint32_t p) -> uint32_t {
   return a >= b ? a - b : a + p - b;
 }
 
-uint32_t mod_pow_host(uint32_t base, uint32_t exp, uint32_t p) {
+auto mod_pow_host(uint32_t base, uint32_t exp, uint32_t p) -> uint32_t {
   uint64_t result = 1, b = base;
   while (exp > 0) {
     if (exp & 1) result = result * b % p;
@@ -26,7 +26,7 @@ uint32_t mod_pow_host(uint32_t base, uint32_t exp, uint32_t p) {
   return (uint32_t)result;
 }
 
-__global__ void bit_reverse_permute(uint32_t* data, int n, int log_n) {
+__global__ auto bit_reverse_permute(uint32_t* data, int n, int log_n) -> void {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
 
@@ -43,8 +43,8 @@ __global__ void bit_reverse_permute(uint32_t* data, int n, int log_n) {
   }
 }
 
-__global__ void butterfly(uint32_t* data, const uint32_t* twiddles, int stage,
-                          int n, uint32_t p) {
+__global__ auto butterfly(uint32_t* data, const uint32_t* twiddles, int stage,
+                          int n, uint32_t p) -> void {
   int k = blockIdx.x * blockDim.x + threadIdx.x;
   if (k >= n / 2) return;
 
@@ -62,20 +62,20 @@ __global__ void butterfly(uint32_t* data, const uint32_t* twiddles, int stage,
   data[j] = mod_sub(u, v, p);
 }
 
-__global__ void scale_mod(uint32_t* data, int n, uint32_t factor, uint32_t p) {
+__global__ auto scale_mod(uint32_t* data, int n, uint32_t factor, uint32_t p) -> void {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   data[i] = mod_mul(data[i], factor, p);
 }
 
-__global__ void pointwise_mul(uint32_t* out, const uint32_t* a, const uint32_t* b,
-                              int n, uint32_t p) {
+__global__ auto pointwise_mul(uint32_t* out, const uint32_t* a, const uint32_t* b,
+                              int n, uint32_t p) -> void {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   out[i] = mod_mul(a[i], b[i], p);
 }
 
-static void ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) {
+static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
   int log_n = __builtin_ctz(n);
 
   std::vector<uint32_t> tw(n);
@@ -103,12 +103,12 @@ static void ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) {
   check_cuda(cudaFree(d_tw));
 }
 
-void ntt_forward(uint32_t* d_data, int n, const NttPrime& prime) {
+auto ntt_forward(uint32_t* d_data, int n, const NttPrime& prime) -> void {
   uint32_t w = mod_pow_host(prime.g, (prime.p - 1) / n, prime.p);
   ntt_core(d_data, n, w, prime.p);
 }
 
-void ntt_inverse(uint32_t* d_data, int n, const NttPrime& prime) {
+auto ntt_inverse(uint32_t* d_data, int n, const NttPrime& prime) -> void {
   uint32_t w = mod_pow_host(prime.g, (prime.p - 1) / n, prime.p);
   uint32_t w_inv = mod_pow_host(w, prime.p - 2, prime.p);
   ntt_core(d_data, n, w_inv, prime.p);
@@ -121,8 +121,8 @@ void ntt_inverse(uint32_t* d_data, int n, const NttPrime& prime) {
   check_cuda(cudaDeviceSynchronize());
 }
 
-void ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a,
-                       const uint32_t* d_b, int n, uint32_t p) {
+auto ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a,
+                       const uint32_t* d_b, int n, uint32_t p) -> void {
   int threads = 256;
   pointwise_mul<<<(n + threads - 1) / threads, threads>>>(d_out, d_a, d_b, n,
                                                            p);

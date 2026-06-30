@@ -3,7 +3,7 @@
 
 #include <vector>
 
-void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
+auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> void {
   int n_digits = 2 * n;
   int m = 1;
   while (m < 2 * n_digits) m <<= 1;

@@ -6,8 +6,8 @@
 #include <iostream>
 #include <source_location>
 
-[[gnu::always_inline]] inline void check_cuda(
-    cudaError_t err, std::source_location loc = std::source_location::current()) {
+[[gnu::always_inline]] inline auto check_cuda(
+    cudaError_t err, std::source_location loc = std::source_location::current()) -> void {
   if (err != cudaSuccess) {
     std::cerr << std::format("CUDA error at {}:{}: {}\n", loc.file_name(), loc.line(),
                              cudaGetErrorString(err));
@@ -15,4 +15,4 @@
   }
 }
 
-void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n);
+auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> void;

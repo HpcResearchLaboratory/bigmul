@@ -7,7 +7,7 @@
 
 #include "bigmul/bigmul.cuh"
 
-static void bench(int n, int warmup, int iters) {
+static auto bench(int n, int warmup, int iters) -> void {
   std::mt19937_64 rng(42 + n);
   std::vector<uint32_t> a(n), b(n), result(2 * n);
   for (int i = 0; i < n; i++) {
