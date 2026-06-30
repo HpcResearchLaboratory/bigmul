@@ -1,7 +1,7 @@
-#include "bigmul/ntt.cuh"
-#include "bigmul/bigmul.cuh"
-
 #include <vector>
+
+#include "bigmul/bigmul.cuh"
+#include "bigmul/ntt.cuh"
 
 __device__ auto mod_mul(uint32_t a, uint32_t b, uint32_t p) -> uint32_t {
   return (uint64_t)a * b % p;
@@ -43,8 +43,8 @@ __global__ auto bit_reverse_permute(uint32_t* data, int n, int log_n) -> void {
   }
 }
 
-__global__ auto butterfly(uint32_t* data, const uint32_t* twiddles, int stage,
-                          int n, uint32_t p) -> void {
+__global__ auto butterfly(uint32_t* data, const uint32_t* twiddles, int stage, int n, uint32_t p)
+    -> void {
   int k = blockIdx.x * blockDim.x + threadIdx.x;
   if (k >= n / 2) return;
 
@@ -68,8 +68,8 @@ __global__ auto scale_mod(uint32_t* data, int n, uint32_t factor, uint32_t p) ->
   data[i] = mod_mul(data[i], factor, p);
 }
 
-__global__ auto pointwise_mul(uint32_t* out, const uint32_t* a, const uint32_t* b,
-                              int n, uint32_t p) -> void {
+__global__ auto pointwise_mul(uint32_t* out, const uint32_t* a, const uint32_t* b, int n,
+                              uint32_t p) -> void {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   out[i] = mod_mul(a[i], b[i], p);
@@ -80,22 +80,18 @@ static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
 
   std::vector<uint32_t> tw(n);
   tw[0] = 1;
-  for (int i = 1; i < n; i++)
-    tw[i] = (uint64_t)tw[i - 1] * w % p;
+  for (int i = 1; i < n; i++) tw[i] = (uint64_t)tw[i - 1] * w % p;
 
   uint32_t* d_tw;
   check_cuda(cudaMalloc(&d_tw, n * sizeof(uint32_t)));
-  check_cuda(
-      cudaMemcpy(d_tw, tw.data(), n * sizeof(uint32_t), cudaMemcpyHostToDevice));
+  check_cuda(cudaMemcpy(d_tw, tw.data(), n * sizeof(uint32_t), cudaMemcpyHostToDevice));
 
   int threads = 256;
-  bit_reverse_permute<<<(n + threads - 1) / threads, threads>>>(d_data, n,
-                                                                 log_n);
+  bit_reverse_permute<<<(n + threads - 1) / threads, threads>>>(d_data, n, log_n);
   check_cuda(cudaGetLastError());
 
   for (int stage = 0; stage < log_n; stage++) {
-    butterfly<<<(n / 2 + threads - 1) / threads, threads>>>(d_data, d_tw, stage,
-                                                             n, p);
+    butterfly<<<(n / 2 + threads - 1) / threads, threads>>>(d_data, d_tw, stage, n, p);
     check_cuda(cudaGetLastError());
   }
 
@@ -115,17 +111,15 @@ auto ntt_inverse(uint32_t* d_data, int n, const NttPrime& prime) -> void {
 
   uint32_t n_inv = mod_pow_host((uint32_t)n, prime.p - 2, prime.p);
   int threads = 256;
-  scale_mod<<<(n + threads - 1) / threads, threads>>>(d_data, n, n_inv,
-                                                       prime.p);
+  scale_mod<<<(n + threads - 1) / threads, threads>>>(d_data, n, n_inv, prime.p);
   check_cuda(cudaGetLastError());
   check_cuda(cudaDeviceSynchronize());
 }
 
-auto ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a,
-                       const uint32_t* d_b, int n, uint32_t p) -> void {
+auto ntt_pointwise_mul(uint32_t* d_out, const uint32_t* d_a, const uint32_t* d_b, int n, uint32_t p)
+    -> void {
   int threads = 256;
-  pointwise_mul<<<(n + threads - 1) / threads, threads>>>(d_out, d_a, d_b, n,
-                                                           p);
+  pointwise_mul<<<(n + threads - 1) / threads, threads>>>(d_out, d_a, d_b, n, p);
   check_cuda(cudaGetLastError());
   check_cuda(cudaDeviceSynchronize());
 }

@@ -23,8 +23,7 @@ static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
   while (top > 0 && limbs[top] == 0) top--;
 
   std::string out = std::format("{:X}", limbs[top]);
-  for (int i = top - 1; i >= 0; i--)
-    out += std::format("{:08X}", limbs[i]);
+  for (int i = top - 1; i >= 0; i--) out += std::format("{:08X}", limbs[i]);
   return out;
 }
 
@@ -48,8 +47,7 @@ auto main(int argc, char** argv) -> int {
   }
 
   auto acc = hex_to_limbs(argv[1]);
-  for (int i = 2; i < argc; i++)
-    mul(acc, hex_to_limbs(argv[i]));
+  for (int i = 2; i < argc; i++) mul(acc, hex_to_limbs(argv[i]));
 
   std::cout << limbs_to_hex(acc.data(), (int)acc.size()) << '\n';
   return 0;
