@@ -43,31 +43,33 @@ void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
   size_t input_bytes = n * sizeof(uint32_t);
   size_t partial_bytes = 2 * n * sizeof(uint64_t);
 
-  cudaMalloc(&d_a, input_bytes);
-  cudaMalloc(&d_b, input_bytes);
-  cudaMalloc(&d_partial_lo, partial_bytes);
-  cudaMalloc(&d_partial_hi, partial_bytes);
+  CHECK_CUDA(cudaMalloc(&d_a, input_bytes));
+  CHECK_CUDA(cudaMalloc(&d_b, input_bytes));
+  CHECK_CUDA(cudaMalloc(&d_partial_lo, partial_bytes));
+  CHECK_CUDA(cudaMalloc(&d_partial_hi, partial_bytes));
 
-  cudaMemcpy(d_a, a, input_bytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_b, b, input_bytes, cudaMemcpyHostToDevice);
-  cudaMemset(d_partial_lo, 0, partial_bytes);
-  cudaMemset(d_partial_hi, 0, partial_bytes);
+  CHECK_CUDA(cudaMemcpy(d_a, a, input_bytes, cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemcpy(d_b, b, input_bytes, cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemset(d_partial_lo, 0, partial_bytes));
+  CHECK_CUDA(cudaMemset(d_partial_hi, 0, partial_bytes));
 
   int threads = 256;
   int blocks = (2 * n + threads - 1) / threads;
   bigmul_kernel<<<blocks, threads>>>(d_a, d_b, d_partial_lo, d_partial_hi, n);
+  CHECK_CUDA(cudaGetLastError());
+  CHECK_CUDA(cudaDeviceSynchronize());
 
   std::vector<uint64_t> h_partial_lo(2 * n);
   std::vector<uint64_t> h_partial_hi(2 * n);
-  cudaMemcpy(h_partial_lo.data(), d_partial_lo, partial_bytes, cudaMemcpyDeviceToHost);
-  cudaMemcpy(h_partial_hi.data(), d_partial_hi, partial_bytes, cudaMemcpyDeviceToHost);
+  CHECK_CUDA(cudaMemcpy(h_partial_lo.data(), d_partial_lo, partial_bytes, cudaMemcpyDeviceToHost));
+  CHECK_CUDA(cudaMemcpy(h_partial_hi.data(), d_partial_hi, partial_bytes, cudaMemcpyDeviceToHost));
 
   carry_propagate(h_partial_lo.data(), h_partial_hi.data(), result, n);
 
-  cudaFree(d_a);
-  cudaFree(d_b);
-  cudaFree(d_partial_lo);
-  cudaFree(d_partial_hi);
+  CHECK_CUDA(cudaFree(d_a));
+  CHECK_CUDA(cudaFree(d_b));
+  CHECK_CUDA(cudaFree(d_partial_lo));
+  CHECK_CUDA(cudaFree(d_partial_hi));
 }
 
 void bigmul_cpu(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {

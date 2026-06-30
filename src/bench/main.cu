@@ -19,23 +19,23 @@ static void bench(int n, int warmup, int iters) {
     bigmul(a.data(), b.data(), result.data(), n);
 
   cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
+  CHECK_CUDA(cudaEventCreate(&start));
+  CHECK_CUDA(cudaEventCreate(&stop));
 
-  cudaEventRecord(start);
+  CHECK_CUDA(cudaEventRecord(start));
   for (int i = 0; i < iters; i++)
     bigmul(a.data(), b.data(), result.data(), n);
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
+  CHECK_CUDA(cudaEventRecord(stop));
+  CHECK_CUDA(cudaEventSynchronize(stop));
 
   float total_ms = 0;
-  cudaEventElapsedTime(&total_ms, start, stop);
+  CHECK_CUDA(cudaEventElapsedTime(&total_ms, start, stop));
   float avg_ms = total_ms / iters;
 
   std::cout << std::format("{},{:.4f}\n", n, avg_ms);
 
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
+  CHECK_CUDA(cudaEventDestroy(start));
+  CHECK_CUDA(cudaEventDestroy(stop));
 }
 
 auto main(int argc, char** argv) -> int {
@@ -54,7 +54,7 @@ auto main(int argc, char** argv) -> int {
   }
 
   cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
+  CHECK_CUDA(cudaGetDeviceProperties(&prop, 0));
   std::cerr << std::format("device: {} (compute {}.{})\n", prop.name,
                            prop.major, prop.minor);
 
