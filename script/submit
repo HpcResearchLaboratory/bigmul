@@ -5,16 +5,11 @@ PROXY_HOST="${PROXY_HOST:?set PROXY_HOST to the ssh proxy machine}"
 CLUSTER_HOST="${CLUSTER_HOST:-}"
 REMOTE_DIR="${REMOTE_DIR:?set REMOTE_DIR to the project path on the cluster}"
 
-PARTITION="${PARTITION:-gpu}"
-ACCOUNT="${ACCOUNT:-}"
-MAX_N="${MAX_N:-1048576}"
-ITERS="${ITERS:-5}"
-WARMUP="${WARMUP:-2}"
+MAX_N="${MAX_N:-65536}"
+ITERS="${ITERS:-3}"
 
 SBATCH_CMD="cd ${REMOTE_DIR} && "
-SBATCH_CMD+="PARTITION=${PARTITION} "
-[ -n "${ACCOUNT}" ] && SBATCH_CMD+="ACCOUNT=${ACCOUNT} "
-SBATCH_CMD+="MAX_N=${MAX_N} ITERS=${ITERS} WARMUP=${WARMUP} "
+SBATCH_CMD+="MAX_N=${MAX_N} ITERS=${ITERS} "
 SBATCH_CMD+="sbatch script/run-sbatch"
 
 if [ -n "${CLUSTER_HOST}" ]; then

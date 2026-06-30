@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+SIF="${SIF:-${HOME}/.singularity/bigmul.sif}"
+CUDA_ARCH="${CUDA_ARCH:-sm_89}"
+
+mkdir -p "$(dirname "${SIF}")"
+
+singularity build --fakeroot --build-arg CUDA_ARCH="${CUDA_ARCH}" \
+    "${SIF}" Containerfile

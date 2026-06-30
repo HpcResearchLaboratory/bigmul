@@ -1,23 +1,36 @@
-SLURM scripts for running benchmarks on a GPU cluster.
+Container-based workflow for running benchmarks on a GPU cluster.
+
+build-container
+    Build the Singularity SIF image. Run on a node with the target GPU arch.
+
+        srun -p grace --time=00:30:00 script/build-container
+
+    Optional env vars:
+        SIF        - output path (default: ~/.singularity/bigmul.sif)
+        CUDA_ARCH  - nvcc arch flag (default: sm_89)
 
 run-sbatch
-    sbatch job script. Compiles, runs benchmark, saves CSV to results/<job_id>/.
+    SLURM job script. Runs the benchmark binary under nsys and ncu,
+    saves profiles to results/<job_id>/.
+
+    Expects the SIF image at ~/.singularity/bigmul.sif.
 
 submit
-    Helper to submit from a local machine through an SSH proxy.
+    Submit from a local machine through an SSH proxy.
 
     Required env vars:
-        PROXY_HOST   - SSH proxy/bastion hostname
-        REMOTE_DIR   - path to the project on the cluster
+        PROXY_HOST  - SSH proxy/bastion hostname
+        REMOTE_DIR  - path to the project on the cluster
 
     Optional:
         CLUSTER_HOST - if the cluster login node differs from the proxy
-        PARTITION    - SLURM partition (default: gpu)
-        ACCOUNT      - SLURM account
-        MAX_N        - max limb count for benchmark sweep (default: 1048576)
-        ITERS        - benchmark iterations (default: 5)
-        WARMUP       - warmup runs (default: 2)
+        MAX_N        - max limb count (default: 65536)
+        ITERS        - benchmark iterations (default: 3)
 
     Example:
-        PROXY_HOST=bastion.example.com REMOTE_DIR=~/bigmul ./script/submit
-        PROXY_HOST=bastion CLUSTER_HOST=gpu-login REMOTE_DIR=/scratch/$USER/bigmul ./script/submit
+        PROXY_HOST=pcad REMOTE_DIR=~/bigmul ./script/submit
+
+test
+    Verify multiply binary correctness against bc.
+
+        make test
