@@ -1,73 +1,48 @@
 -include config.mk
 
-NVCC      ?= nvcc
-AR        ?= ar
+NVCC ?= nvcc
+AR ?= ar
 NVCCFLAGS ?= -O2
-
 CPPFLAGS := -MMD -MP $(addprefix -I,$(shell find src include -type d 2>/dev/null))
-PREFIX   ?= /usr/local
-BINDIR   ?= $(PREFIX)/bin
-LIBDIR   ?= $(PREFIX)/lib
-INCDIR   ?= $(PREFIX)/include
 
-MULTIPLY     := build/bin/multiply
-MULTIPLY_OBJS = $(patsubst src/%.cu,build/%.o,$(shell find src/multiply -name '*.cu'))
+BIGMUL := build/lib/libbigmul.a
+BIGMUL_O := $(patsubst src/%.cu,build/%.o,$(shell find src/bigmul -name '*.cu'))
 
-BENCH        := build/bin/bench
-BENCH_OBJS    = $(patsubst src/%.cu,build/%.o,$(shell find src/bench -name '*.cu'))
+BINS := multiply
+$(foreach b,$(BINS),$(eval $(b)_O := $(patsubst src/%.cu,build/%.o,$(shell find src/$(b) -name '*.cu'))))
 
-BIGMUL       := build/lib/libbigmul.a
-BIGMUL_OBJS   = $(patsubst src/%.cu,build/%.o,$(shell find src/bigmul -name '*.cu'))
+SRCS := $(shell find src -name '*.cu') $(shell find include -name '*.cuh')
+COMPDB := build/compile_commands.json
 
-.PHONY: all clean run test bench install uninstall compdb
+.PHONY: all clean test $(BINS)
 
-all: $(MULTIPLY)
+all: $(BINS) $(COMPDB)
 
-run: $(MULTIPLY)
-	@./$< $(ARGS)
+$(BINS): %: build/bin/%
 
-test: $(MULTIPLY)
-	@script/test ./$<
-
-bench: $(BENCH)
-	@./$< $(ARGS)
+test: multiply
+	@script/test ./build/bin/multiply
 
 clean:
 	@rm -rf build
 
-compdb:
-	@mkdir -p build
-	@bear --output build/compile_commands.json -- $(MAKE) all
+$(COMPDB): $(SRCS)
+	@bear --output $@ -- $(MAKE) --always-make $(BINS) 2>/dev/null; true
 
-install: $(MULTIPLY) $(BIGMUL)
-	@install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCDIR)/bigmul
-	@install -m 755 $(MULTIPLY) $(DESTDIR)$(BINDIR)/
-	@install -m 644 $(BIGMUL) $(DESTDIR)$(LIBDIR)/
-	@install -m 644 include/bigmul/*.cuh $(DESTDIR)$(INCDIR)/bigmul/
-
-uninstall:
-	@rm -f $(DESTDIR)$(BINDIR)/multiply
-	@rm -f $(DESTDIR)$(LIBDIR)/libbigmul.a
-	@rm -rf $(DESTDIR)$(INCDIR)/bigmul
-
-$(MULTIPLY): $(MULTIPLY_OBJS) $(BIGMUL)
-	@mkdir -p $(@D)
-	@echo "LD   $@"
-	@$(NVCC) $(NVCCFLAGS) $(MULTIPLY_OBJS) -Lbuild/lib -lbigmul -o $@
-
-$(BENCH): $(BENCH_OBJS) $(BIGMUL)
-	@mkdir -p $(@D)
-	@echo "LD   $@"
-	@$(NVCC) $(NVCCFLAGS) $(BENCH_OBJS) -Lbuild/lib -lbigmul -o $@
-
-$(BIGMUL): $(BIGMUL_OBJS)
+$(BIGMUL): $(BIGMUL_O)
 	@mkdir -p $(@D)
 	@echo "AR   $@"
 	@$(AR) rcs $@ $^
+
+.SECONDEXPANSION:
+build/bin/%: $$($$*_O) $(BIGMUL)
+	@mkdir -p $(@D)
+	@echo "LD   $@"
+	@$(NVCC) $(NVCCFLAGS) $($*_O) -Lbuild/lib -lbigmul -o $@
 
 build/%.o: src/%.cu
 	@mkdir -p $(@D)
 	@echo "NVCC $<"
 	@$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
 
--include $(MULTIPLY_OBJS:.o=.d) $(BENCH_OBJS:.o=.d) $(BIGMUL_OBJS:.o=.d)
+-include $(BIGMUL_O:.o=.d) $(foreach b,$(BINS),$($(b)_O:.o=.d))
