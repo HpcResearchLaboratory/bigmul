@@ -1,7 +1,6 @@
 #include "bigmul/bigmul.cuh"
 #include "bigmul/ntt.cuh"
 
-#include <cstring>
 #include <vector>
 
 void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
@@ -76,26 +75,6 @@ void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
         result[limb] = digit;
       else
         result[limb] |= digit << 16;
-    }
-  }
-}
-
-void bigmul_cpu(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
-  memset(result, 0, 2 * n * sizeof(uint32_t));
-
-  for (int i = 0; i < n; i++) {
-    uint64_t carry = 0;
-    for (int j = 0; j < n; j++) {
-      __uint128_t prod = (__uint128_t)a[i] * b[j] + result[i + j] + carry;
-      result[i + j] = (uint32_t)prod;
-      carry = (uint64_t)(prod >> 32);
-    }
-    int k = i + n;
-    while (carry && k < 2 * n) {
-      uint64_t sum = (uint64_t)result[k] + carry;
-      result[k] = (uint32_t)sum;
-      carry = sum >> 32;
-      k++;
     }
   }
 }

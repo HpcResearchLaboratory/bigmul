@@ -13,9 +13,6 @@ INCDIR   ?= $(PREFIX)/include
 MULTIPLY     := build/bin/multiply
 MULTIPLY_OBJS = $(patsubst src/%.cu,build/%.o,$(shell find src/multiply -name '*.cu'))
 
-TEST         := build/bin/test
-TEST_OBJS     = $(patsubst src/%.cu,build/%.o,$(shell find src/test -name '*.cu'))
-
 BENCH        := build/bin/bench
 BENCH_OBJS    = $(patsubst src/%.cu,build/%.o,$(shell find src/bench -name '*.cu'))
 
@@ -29,8 +26,8 @@ all: $(MULTIPLY)
 run: $(MULTIPLY)
 	@./$< $(ARGS)
 
-test: $(TEST)
-	@./$<
+test: $(MULTIPLY)
+	@script/test ./$<
 
 bench: $(BENCH)
 	@./$< $(ARGS)
@@ -58,11 +55,6 @@ $(MULTIPLY): $(MULTIPLY_OBJS) $(BIGMUL)
 	@echo "LD   $@"
 	@$(NVCC) $(NVCCFLAGS) $(MULTIPLY_OBJS) -Lbuild/lib -lbigmul -o $@
 
-$(TEST): $(TEST_OBJS) $(BIGMUL)
-	@mkdir -p $(@D)
-	@echo "LD   $@"
-	@$(NVCC) $(NVCCFLAGS) $(TEST_OBJS) -Lbuild/lib -lbigmul -o $@
-
 $(BENCH): $(BENCH_OBJS) $(BIGMUL)
 	@mkdir -p $(@D)
 	@echo "LD   $@"
@@ -78,4 +70,4 @@ build/%.o: src/%.cu
 	@echo "NVCC $<"
 	@$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
 
--include $(MULTIPLY_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(BENCH_OBJS:.o=.d) $(BIGMUL_OBJS:.o=.d)
+-include $(MULTIPLY_OBJS:.o=.d) $(BENCH_OBJS:.o=.d) $(BIGMUL_OBJS:.o=.d)

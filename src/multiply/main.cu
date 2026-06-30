@@ -1,30 +1,49 @@
-#include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "bigmul/bigmul.cuh"
 
-auto main() -> int {
-  constexpr int n = 4;
-  std::array<uint32_t, n> a = {0xFFFFFFFF, 0x00000001, 0x00000000, 0x00000000};
-  std::array<uint32_t, n> b = {0x00000002, 0x00000000, 0x00000000, 0x00000000};
-  std::array<uint32_t, 2 * n> cpu_result = {};
-  std::array<uint32_t, 2 * n> gpu_result = {};
+static std::vector<uint32_t> hex_to_limbs(const std::string& hex) {
+  std::vector<uint32_t> limbs;
+  int len = hex.size();
+  for (int i = len; i > 0; i -= 8) {
+    int start = (i >= 8) ? i - 8 : 0;
+    int count = i - start;
+    limbs.push_back((uint32_t)strtoul(hex.substr(start, count).c_str(), nullptr, 16));
+  }
+  return limbs;
+}
 
-  bigmul_cpu(a.data(), b.data(), cpu_result.data(), n);
-  bigmul(a.data(), b.data(), gpu_result.data(), n);
+static std::string limbs_to_hex(const uint32_t* limbs, int n) {
+  int top = n - 1;
+  while (top > 0 && limbs[top] == 0) top--;
 
-  std::cout << "cpu:";
-  for (const auto& r : cpu_result) std::cout << std::format(" {:08X}", r);
-  std::cout << '\n';
+  std::string out = std::format("{:X}", limbs[top]);
+  for (int i = top - 1; i >= 0; i--)
+    out += std::format("{:08X}", limbs[i]);
+  return out;
+}
 
-  std::cout << "gpu:";
-  for (const auto& r : gpu_result) std::cout << std::format(" {:08X}", r);
-  std::cout << '\n';
+auto main(int argc, char** argv) -> int {
+  if (argc != 3) {
+    std::cerr << "usage: multiply <hex_a> <hex_b>\n";
+    return 1;
+  }
 
-  bool match = (cpu_result == gpu_result);
-  std::cout << (match ? "MATCH" : "MISMATCH") << '\n';
+  auto a = hex_to_limbs(argv[1]);
+  auto b = hex_to_limbs(argv[2]);
 
-  return match ? 0 : 1;
+  int n = (int)std::max(a.size(), b.size());
+  a.resize(n, 0);
+  b.resize(n, 0);
+
+  std::vector<uint32_t> result(2 * n, 0);
+  bigmul(a.data(), b.data(), result.data(), n);
+
+  std::cout << limbs_to_hex(result.data(), 2 * n) << '\n';
+  return 0;
 }
