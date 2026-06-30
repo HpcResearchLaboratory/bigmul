@@ -1,75 +1,83 @@
 #include "bigmul/bigmul.cuh"
+#include "bigmul/ntt.cuh"
 
 #include <cstring>
 #include <vector>
 
-__global__ void bigmul_kernel(const uint32_t* a, const uint32_t* b,
-                              uint64_t* partial_lo, uint64_t* partial_hi, int n) {
-  int k = blockIdx.x * blockDim.x + threadIdx.x;
-  if (k >= 2 * n) return;
-
-  int j_start = (k >= n) ? (k - n + 1) : 0;
-  int j_end = (k < n) ? k : (n - 1);
-
-  uint64_t acc_lo = 0, acc_hi = 0;
-  for (int j = j_start; j <= j_end; j++) {
-    uint64_t prod = (uint64_t)a[j] * (uint64_t)b[k - j];
-    uint64_t prev = acc_lo;
-    acc_lo += prod;
-    if (acc_lo < prev) acc_hi++;
-  }
-
-  partial_lo[k] = acc_lo;
-  partial_hi[k] = acc_hi;
-}
-
-static void carry_propagate(const uint64_t* partial_lo, const uint64_t* partial_hi,
-                            uint32_t* result, int n) {
-  uint64_t carry_lo = 0, carry_hi = 0;
-  for (int k = 0; k < 2 * n; k++) {
-    uint64_t sum_lo = partial_lo[k] + carry_lo;
-    uint64_t sum_hi = partial_hi[k] + carry_hi + (sum_lo < partial_lo[k] ? 1 : 0);
-
-    result[k] = (uint32_t)(sum_lo & 0xFFFFFFFF);
-
-    carry_lo = (sum_lo >> 32) | (sum_hi << 32);
-    carry_hi = sum_hi >> 32;
-  }
-}
-
 void bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
-  uint32_t *d_a, *d_b;
-  uint64_t *d_partial_lo, *d_partial_hi;
-  size_t input_bytes = n * sizeof(uint32_t);
-  size_t partial_bytes = 2 * n * sizeof(uint64_t);
+  int n_digits = 2 * n;
+  int m = 1;
+  while (m < 2 * n_digits) m <<= 1;
 
-  CHECK_CUDA(cudaMalloc(&d_a, input_bytes));
-  CHECK_CUDA(cudaMalloc(&d_b, input_bytes));
-  CHECK_CUDA(cudaMalloc(&d_partial_lo, partial_bytes));
-  CHECK_CUDA(cudaMalloc(&d_partial_hi, partial_bytes));
+  std::vector<uint32_t> da(m, 0), db(m, 0);
+  for (int i = 0; i < n; i++) {
+    da[2 * i] = a[i] & 0xFFFF;
+    da[2 * i + 1] = a[i] >> 16;
+    db[2 * i] = b[i] & 0xFFFF;
+    db[2 * i + 1] = b[i] >> 16;
+  }
 
-  CHECK_CUDA(cudaMemcpy(d_a, a, input_bytes, cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(d_b, b, input_bytes, cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemset(d_partial_lo, 0, partial_bytes));
-  CHECK_CUDA(cudaMemset(d_partial_hi, 0, partial_bytes));
+  const NttPrime primes[] = {NTT_P1, NTT_P2, NTT_P3};
+  std::vector<uint32_t> res[3];
 
-  int threads = 256;
-  int blocks = (2 * n + threads - 1) / threads;
-  bigmul_kernel<<<blocks, threads>>>(d_a, d_b, d_partial_lo, d_partial_hi, n);
-  CHECK_CUDA(cudaGetLastError());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  uint32_t *d_a, *d_b, *d_c;
+  size_t bytes = m * sizeof(uint32_t);
+  CHECK_CUDA(cudaMalloc(&d_a, bytes));
+  CHECK_CUDA(cudaMalloc(&d_b, bytes));
+  CHECK_CUDA(cudaMalloc(&d_c, bytes));
 
-  std::vector<uint64_t> h_partial_lo(2 * n);
-  std::vector<uint64_t> h_partial_hi(2 * n);
-  CHECK_CUDA(cudaMemcpy(h_partial_lo.data(), d_partial_lo, partial_bytes, cudaMemcpyDeviceToHost));
-  CHECK_CUDA(cudaMemcpy(h_partial_hi.data(), d_partial_hi, partial_bytes, cudaMemcpyDeviceToHost));
+  for (int pi = 0; pi < 3; pi++) {
+    CHECK_CUDA(cudaMemcpy(d_a, da.data(), bytes, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_b, db.data(), bytes, cudaMemcpyHostToDevice));
 
-  carry_propagate(h_partial_lo.data(), h_partial_hi.data(), result, n);
+    ntt_forward(d_a, m, primes[pi]);
+    ntt_forward(d_b, m, primes[pi]);
+    ntt_pointwise_mul(d_c, d_a, d_b, m, primes[pi].p);
+    ntt_inverse(d_c, m, primes[pi]);
+
+    res[pi].resize(m);
+    CHECK_CUDA(
+        cudaMemcpy(res[pi].data(), d_c, bytes, cudaMemcpyDeviceToHost));
+  }
 
   CHECK_CUDA(cudaFree(d_a));
   CHECK_CUDA(cudaFree(d_b));
-  CHECK_CUDA(cudaFree(d_partial_lo));
-  CHECK_CUDA(cudaFree(d_partial_hi));
+  CHECK_CUDA(cudaFree(d_c));
+
+  uint32_t p1 = NTT_P1.p, p2 = NTT_P2.p, p3 = NTT_P3.p;
+  uint32_t p1_inv_p2 = mod_pow_host(p1, p2 - 2, p2);
+  uint32_t p1_inv_p3 = mod_pow_host(p1, p3 - 2, p3);
+  uint32_t p2_inv_p3 = mod_pow_host(p2, p3 - 2, p3);
+
+  int out_digits = 4 * n;
+  uint64_t carry = 0;
+
+  for (int i = 0; i < out_digits; i++) {
+    uint64_t r1 = (i < m) ? res[0][i] : 0;
+    uint64_t r2 = (i < m) ? res[1][i] : 0;
+    uint64_t r3 = (i < m) ? res[2][i] : 0;
+
+    uint64_t a1 = r1;
+    uint64_t diff2 = (r2 + p2 - a1 % p2) % p2;
+    uint64_t a2 = diff2 * p1_inv_p2 % p2;
+    uint64_t diff3 = (r3 + p3 - a1 % p3) % p3;
+    uint64_t tmp = diff3 * p1_inv_p3 % p3;
+    uint64_t a3 = (tmp + p3 - a2 % p3) % p3 * p2_inv_p3 % p3;
+
+    __uint128_t x = a1 + (__uint128_t)a2 * p1 + (__uint128_t)a3 * p1 * p2;
+    x += carry;
+
+    uint32_t digit = (uint32_t)(x & 0xFFFF);
+    carry = (uint64_t)(x >> 16);
+
+    int limb = i / 2;
+    if (limb < 2 * n) {
+      if (i % 2 == 0)
+        result[limb] = digit;
+      else
+        result[limb] |= digit << 16;
+    }
+  }
 }
 
 void bigmul_cpu(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) {
