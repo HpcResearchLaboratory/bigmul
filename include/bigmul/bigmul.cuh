@@ -1,17 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
-#include <format>
-#include <iostream>
 #include <source_location>
 
 [[gnu::always_inline]] inline auto check_cuda(
     cudaError_t err, std::source_location loc = std::source_location::current()) -> void {
   if (err == cudaSuccess) return;
 
-  std::cerr << std::format("CUDA error at {}:{}: {}\n", loc.file_name(), loc.line(),
-                           cudaGetErrorString(err));
+  fprintf(stderr, "CUDA error at %s:%u: %s\n", loc.file_name(), loc.line(),
+          cudaGetErrorString(err));
   std::exit(1);
 }
 

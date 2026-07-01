@@ -1,6 +1,6 @@
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
-#include <format>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -22,8 +22,13 @@ static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
   int top = n - 1;
   while (top > 0 && limbs[top] == 0) top--;
 
-  std::string out = std::format("{:X}", limbs[top]);
-  for (int i = top - 1; i >= 0; i--) out += std::format("{:08X}", limbs[i]);
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%X", limbs[top]);
+  std::string out = buf;
+  for (int i = top - 1; i >= 0; i--) {
+    snprintf(buf, sizeof(buf), "%08X", limbs[i]);
+    out += buf;
+  }
   return out;
 }
 
