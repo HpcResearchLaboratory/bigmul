@@ -47,11 +47,14 @@ kernel_counts = con.execute("""
 # --- Wall-clock timings ---
 if os.path.exists(timings_csv):
     with open(timings_csv) as f:
-        timing_rows = [(int(r["n"]), float(r["wall_ms"])) for r in csv.DictReader(f)]
-    add_sheet(wb, "Timings", ["n_limbs", "wall_ms"], timing_rows)
-    summary.append(("Wall-clock timings", ""))
-    for n, ms in timing_rows:
-        summary.append((f"  n={n}", f"{ms} ms"))
+        timing_rows = []
+        for r in csv.DictReader(f):
+            timing_rows.append((int(r["n"]), float(r["mean_ms"]), float(r["stddev_ms"]),
+                                float(r["min_ms"]), float(r["max_ms"])))
+    add_sheet(wb, "Timings", ["n_limbs", "mean_ms", "stddev_ms", "min_ms", "max_ms"], timing_rows)
+    summary.append(("Wall-clock timings (hyperfine, 10 runs)", ""))
+    for n, mean, std, mn, mx in timing_rows:
+        summary.append((f"  n={n}", f"{mean:.1f} +/- {std:.1f} ms"))
     summary.append(("", ""))
 
 summary.append(("Total kernel time (ms)", round(total_kernel / 1e6, 3)))

@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -32,22 +33,47 @@ static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
   return out;
 }
 
-static auto mul(std::vector<uint32_t>& a, const std::vector<uint32_t>& b) -> void {
+static auto mul_pair(const std::string& ha, const std::string& hb) -> std::string {
+  auto a = hex_to_limbs(ha);
+  auto b = hex_to_limbs(hb);
   auto n = std::max(a.size(), b.size());
   a.resize(n, 0);
-  auto b_padded = b;
-  b_padded.resize(n, 0);
+  b.resize(n, 0);
 
   std::vector<uint32_t> result(2 * n, 0);
-  bigmul(a.data(), b_padded.data(), result.data(), n);
+  bigmul(a.data(), b.data(), result.data(), n);
 
-  while (result.size() > 1 && result.back() == 0) result.pop_back();
-  a = std::move(result);
+  return limbs_to_hex(result.data(), 2 * n);
+}
+
+static auto run_batch() -> int {
+  std::string a, b;
+  while (std::getline(std::cin, a) && std::getline(std::cin, b))
+    std::cout << mul_pair(a, b) << '\n';
+  return 0;
+}
+
+static auto run_chain(std::vector<std::string>& args) -> int {
+  auto acc = hex_to_limbs(args[0]);
+  for (size_t i = 1; i < args.size(); i++) {
+    auto b = hex_to_limbs(args[i]);
+    auto n = std::max(acc.size(), b.size());
+    acc.resize(n, 0);
+    b.resize(n, 0);
+    std::vector<uint32_t> result(2 * n, 0);
+    bigmul(acc.data(), b.data(), result.data(), n);
+    while (result.size() > 1 && result.back() == 0) result.pop_back();
+    acc = std::move(result);
+  }
+  std::cout << limbs_to_hex(acc.data(), (int)acc.size()) << '\n';
+  return 0;
 }
 
 auto main(int argc, char** argv) -> int {
-  std::vector<std::string> args;
+  if (argc >= 2 && strcmp(argv[1], "--batch") == 0)
+    return run_batch();
 
+  std::vector<std::string> args;
   if (argc >= 3) {
     for (int i = 1; i < argc; i++) args.emplace_back(argv[i]);
   } else {
@@ -57,14 +83,10 @@ auto main(int argc, char** argv) -> int {
   }
 
   if (args.size() < 2) {
-    std::cerr << "usage: multiply <hex> <hex> [<hex>...]\n"
-              << "       cat a.hex b.hex | multiply\n";
+    std::cerr << "usage: multiply [--batch] <hex> <hex> [<hex>...]\n"
+              << "       multiply --batch < pairs.txt\n";
     return 1;
   }
 
-  auto acc = hex_to_limbs(args[0]);
-  for (size_t i = 1; i < args.size(); i++) mul(acc, hex_to_limbs(args[i]));
-
-  std::cout << limbs_to_hex(acc.data(), (int)acc.size()) << '\n';
-  return 0;
+  return run_chain(args);
 }

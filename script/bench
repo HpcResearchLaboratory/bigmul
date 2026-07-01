@@ -2,14 +2,20 @@
 set -euo pipefail
 export LC_ALL=C LANG=C
 
-MAX_N="${1:-65536}"
+MAX_N="${1:-2097152}"
+NCU_N="${2:-16384}"
+BATCH=10
 OUT="data"
 SIF="${HOME}/.singularity/nvhpc.sif"
 RUN="singularity exec --nv --bind $(pwd):$(pwd) --pwd $(pwd) ${SIF}"
+BIN="./build/bin/multiply"
+NSYS="/usr/local/cuda/bin/nsys"
+NCU="/usr/local/cuda/bin/ncu"
+HF="${HOME}/.local/bin/hyperfine"
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
-echo "NVCCFLAGS = -O2 -std=c++20 -arch=sm_89" > config.mk
+echo "NVCCFLAGS = -O2 -std=c++20 -arch=sm_89 -Xcompiler -static-libstdc++ -Xcompiler -static-libgcc" > config.mk
 
 ${RUN} make clean && ${RUN} make all && ${RUN} make test
 
@@ -17,29 +23,41 @@ nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv,noheader > "${
 
 rand_hex() { openssl rand -hex $(($1 * 4)) | tr '[:lower:]' '[:upper:]'; }
 
-echo "n,wall_ms" > "${OUT}/timings.csv"
-for p in $(seq 6 16); do
+gen_batch() {
+    local count="${2:-${BATCH}}"
+    for _ in $(seq 1 "${count}"); do
+        rand_hex $1
+        rand_hex $1
+    done
+}
+
+echo "timings (${BATCH} multiplications per run)..."
+for p in $(seq 10 21); do
     n=$((1 << p)); [ $n -gt ${MAX_N} ] && break
-    rand_hex $n > /tmp/bigmul_a.hex
-    rand_hex $n > /tmp/bigmul_b.hex
-    ms=$({ time cat /tmp/bigmul_a.hex /tmp/bigmul_b.hex | ${RUN} ./build/bin/multiply > /dev/null; } 2>&1 | grep real | sed 's/[^0-9.]//g')
-    ms=$(echo "$ms * 1000" | bc)
-    echo "${n},${ms}"
-    echo "${n},${ms}" >> "${OUT}/timings.csv"
+    gen_batch $n > /tmp/bigmul_batch.txt
+    ${HF} --warmup 1 --runs 5 --export-json "${OUT}/hf_${n}.json" \
+        "${BIN} --batch < /tmp/bigmul_batch.txt > /dev/null"
 done
 
-echo "nsys (n up to ${MAX_N})..."
-${RUN} nsys profile -o "${OUT}/nsys" --force-overwrite true bash -c "
-    for p in \$(seq 6 16); do
-        n=\$((1 << p)); [ \$n -gt ${MAX_N} ] && break
-        rand_hex() { openssl rand -hex \$((\$1 * 4)) | tr [:lower:] [:upper:]; }
-        { rand_hex \$n; rand_hex \$n; } | ./build/bin/multiply > /dev/null
-    done
-"
-${RUN} nsys stats --force-export true "${OUT}/nsys.nsys-rep" > "${OUT}/nsys-summary.txt" 2>&1 || true
+python3 -c "
+import json, glob
+files = sorted(glob.glob('${OUT}/hf_*.json'), key=lambda f: int(f.split('_')[-1].split('.')[0]))
+print('n,mean_ms,stddev_ms,min_ms,max_ms')
+for f in files:
+    n = int(f.split('_')[-1].split('.')[0])
+    d = json.load(open(f))['results'][0]
+    print(f'{n},{d[\"mean\"]*1000:.3f},{d[\"stddev\"]*1000:.3f},{d[\"min\"]*1000:.3f},{d[\"max\"]*1000:.3f}')
+" > "${OUT}/timings.csv"
+cat "${OUT}/timings.csv"
 
-echo "ncu (n=${MAX_N})..."
-{ rand_hex "${MAX_N}"; rand_hex "${MAX_N}"; } | ${RUN} ncu --set full -o "${OUT}/ncu" --force \
-    ./build/bin/multiply > /dev/null 2>&1 || true
+echo "nsys (n=${MAX_N})..."
+gen_batch ${MAX_N} 1 > /tmp/bigmul_batch.txt
+${NSYS} profile -o "${OUT}/nsys" --force-overwrite true \
+    ${BIN} --batch < /tmp/bigmul_batch.txt > /dev/null
+${NSYS} stats --force-export true "${OUT}/nsys.nsys-rep" > "${OUT}/nsys-summary.txt" 2>&1 || true
+
+echo "ncu (n=${NCU_N})..."
+{ rand_hex "${NCU_N}"; rand_hex "${NCU_N}"; } | ${NCU} --set full -o "${OUT}/ncu" --force \
+    ${BIN} > /dev/null 2>&1 || true
 
 echo "done"
