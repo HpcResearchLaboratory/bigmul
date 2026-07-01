@@ -1,0 +1,145 @@
+#!/bin/bash
+set -euo pipefail
+
+DATA="${1:-data}"
+OUT="result"
+NCU=/opt/nvidia/hpc_sdk/Linux_x86_64/26.3/profilers/13.1/Nsight_Compute/ncu
+
+mkdir -p "${OUT}"
+
+NSYS_DB="${DATA}/nsys.sqlite"
+NCU_REP="${DATA}/ncu.ncu-rep"
+NCU_RAW=$(mktemp)
+
+${NCU} --import "${NCU_REP}" --csv --page raw 2>/dev/null > "${NCU_RAW}"
+
+TIMINGS="${DATA}/timings.csv"
+
+python3 - "${NSYS_DB}" "${NCU_RAW}" "${TIMINGS}" "${OUT}/report.xlsx" << 'PYTHON'
+import csv, sqlite3, sys, os
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+
+nsys_db, ncu_csv, timings_csv, out_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+wb = Workbook()
+
+def add_sheet(wb, name, headers, rows):
+    ws = wb.create_sheet(name)
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    for i, _ in enumerate(headers, 1):
+        ws.column_dimensions[get_column_letter(i)].width = 20
+
+# --- Summary ---
+con = sqlite3.connect(nsys_db)
+summary = []
+
+total_kernel = con.execute("SELECT SUM(end - start) FROM CUPTI_ACTIVITY_KIND_KERNEL").fetchone()[0] or 0
+total_memcpy = con.execute("SELECT SUM(end - start) FROM CUPTI_ACTIVITY_KIND_MEMCPY").fetchone()[0] or 0
+total_api = con.execute("SELECT SUM(end - start) FROM CUPTI_ACTIVITY_KIND_RUNTIME").fetchone()[0] or 0
+kernel_counts = con.execute("""
+    SELECT s.value, COUNT(*), SUM(k.end - k.start)
+    FROM CUPTI_ACTIVITY_KIND_KERNEL k JOIN StringIds s ON k.shortName = s.id
+    GROUP BY s.value ORDER BY 3 DESC
+""").fetchall()
+
+# --- Wall-clock timings ---
+if os.path.exists(timings_csv):
+    with open(timings_csv) as f:
+        timing_rows = [(int(r["n"]), float(r["wall_ms"])) for r in csv.DictReader(f)]
+    add_sheet(wb, "Timings", ["n_limbs", "wall_ms"], timing_rows)
+    summary.append(("Wall-clock timings", ""))
+    for n, ms in timing_rows:
+        summary.append((f"  n={n}", f"{ms} ms"))
+    summary.append(("", ""))
+
+summary.append(("Total kernel time (ms)", round(total_kernel / 1e6, 3)))
+summary.append(("Total memcpy time (ms)", round(total_memcpy / 1e6, 3)))
+summary.append(("Total CUDA API time (ms)", round(total_api / 1e6, 3)))
+summary.append(("", ""))
+summary.append(("Kernel", "Count, Total (ms), % of kernel time"))
+for name, count, total in kernel_counts:
+    pct = round(100 * total / total_kernel, 1) if total_kernel else 0
+    summary.append((name, f"{count}, {round(total/1e6, 3)}, {pct}%"))
+
+add_sheet(wb, "Summary", ["metric", "value"], summary)
+
+# --- Kernels (nsys) ---
+rows = con.execute("""
+    SELECT s.value, (k.end - k.start), k.gridX, k.blockX
+    FROM CUPTI_ACTIVITY_KIND_KERNEL k
+    JOIN StringIds s ON k.shortName = s.id
+    ORDER BY k.start
+""").fetchall()
+add_sheet(wb, "Kernels", ["kernel", "duration_ns", "grid_x", "block_x"], rows)
+
+# --- Memcpy (nsys) ---
+rows = con.execute("""
+    SELECT e.label, (m.end - m.start), m.bytes
+    FROM CUPTI_ACTIVITY_KIND_MEMCPY m
+    JOIN ENUM_CUDA_MEMCPY_OPER e ON m.copyKind = e.id
+    ORDER BY m.start
+""").fetchall()
+add_sheet(wb, "Memcpy", ["direction", "duration_ns", "bytes"], rows)
+
+# --- CUDA API (nsys) ---
+rows = con.execute("""
+    SELECT s.value, SUM(r.end - r.start), COUNT(*)
+    FROM CUPTI_ACTIVITY_KIND_RUNTIME r
+    JOIN StringIds s ON r.nameId = s.id
+    GROUP BY s.value ORDER BY 2 DESC
+""").fetchall()
+add_sheet(wb, "CUDA API", ["name", "total_ns", "count"], rows)
+con.close()
+
+# --- NCU metrics ---
+STALL_PRE = "smsp__average_warps_issue_stalled_"
+STALL_SUF = "_per_issue_active.ratio"
+METRICS = [
+    ("duration_us",  "gpu__time_duration.avg"),
+    ("compute_pct",  "sm__throughput.avg.pct_of_peak_sustained_elapsed"),
+    ("memory_pct",   "sm__memory_throughput.avg.pct_of_peak_sustained_elapsed"),
+    ("occupancy",    "launch__occupancy_per_block_size"),
+    ("l1_hit_pct",   "l1tex__t_sector_hit_rate.pct"),
+    ("l2_hit_pct",   "lts__t_sector_hit_rate.pct"),
+    ("alu_pipe_pct", "sm__pipe_alu_cycles_active.avg.pct_of_peak_sustained_elapsed"),
+]
+
+ncu_headers = ["kernel"] + [m[0] for m in METRICS] + \
+    ["stall_1", "stall_1_ratio", "stall_2", "stall_2_ratio", "stall_3", "stall_3_ratio"]
+ncu_rows = []
+
+with open(ncu_csv) as f:
+    reader = csv.DictReader(f)
+    next(reader)  # skip units row
+    for r in reader:
+        name = r.get("Kernel Name", "").split("(")[0].strip()
+        if not name:
+            continue
+        row = [name]
+        for _, metric in METRICS:
+            v = r.get(metric, "").replace(",", "")
+            try: row.append(float(v))
+            except: row.append(v)
+
+        stalls = {}
+        for k, v in r.items():
+            if k.startswith(STALL_PRE) and k.endswith(STALL_SUF):
+                sname = k[len(STALL_PRE):-len(STALL_SUF)]
+                try: stalls[sname] = float(v.replace(",", "."))
+                except: pass
+        for sname, sval in sorted(stalls.items(), key=lambda x: -x[1])[:3]:
+            row.extend([sname, round(sval, 3)])
+        ncu_rows.append(row)
+
+add_sheet(wb, "NCU Metrics", ncu_headers, ncu_rows)
+
+del wb["Sheet"]  # remove default empty sheet
+wb.save(out_path)
+print(f"wrote {out_path}")
+for ws in wb.worksheets:
+    print(f"  {ws.title}: {ws.max_row - 1} rows")
+PYTHON
+
+rm -f "${NCU_RAW}"

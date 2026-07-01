@@ -1,0 +1,45 @@
+#!/bin/bash
+set -euo pipefail
+export LC_ALL=C LANG=C
+
+MAX_N="${1:-65536}"
+OUT="data"
+SIF="${HOME}/.singularity/nvhpc.sif"
+RUN="singularity exec --nv --bind $(pwd):$(pwd) --pwd $(pwd) ${SIF}"
+
+rm -rf "${OUT}"
+mkdir -p "${OUT}"
+echo "NVCCFLAGS = -O2 -std=c++20 -arch=sm_89" > config.mk
+
+${RUN} make clean && ${RUN} make all && ${RUN} make test
+
+nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv,noheader > "${OUT}/gpu-info.txt"
+
+rand_hex() { openssl rand -hex $(($1 * 4)) | tr '[:lower:]' '[:upper:]'; }
+
+echo "n,wall_ms" > "${OUT}/timings.csv"
+for p in $(seq 6 16); do
+    n=$((1 << p)); [ $n -gt ${MAX_N} ] && break
+    rand_hex $n > /tmp/bigmul_a.hex
+    rand_hex $n > /tmp/bigmul_b.hex
+    ms=$({ time cat /tmp/bigmul_a.hex /tmp/bigmul_b.hex | ${RUN} ./build/bin/multiply > /dev/null; } 2>&1 | grep real | sed 's/[^0-9.]//g')
+    ms=$(echo "$ms * 1000" | bc)
+    echo "${n},${ms}"
+    echo "${n},${ms}" >> "${OUT}/timings.csv"
+done
+
+echo "nsys (n up to ${MAX_N})..."
+${RUN} nsys profile -o "${OUT}/nsys" --force-overwrite true bash -c "
+    for p in \$(seq 6 16); do
+        n=\$((1 << p)); [ \$n -gt ${MAX_N} ] && break
+        rand_hex() { openssl rand -hex \$((\$1 * 4)) | tr [:lower:] [:upper:]; }
+        { rand_hex \$n; rand_hex \$n; } | ./build/bin/multiply > /dev/null
+    done
+"
+${RUN} nsys stats --force-export true "${OUT}/nsys.nsys-rep" > "${OUT}/nsys-summary.txt" 2>&1 || true
+
+echo "ncu (n=${MAX_N})..."
+{ rand_hex "${MAX_N}"; rand_hex "${MAX_N}"; } | ${RUN} ncu --set full -o "${OUT}/ncu" --force \
+    ./build/bin/multiply > /dev/null 2>&1 || true
+
+echo "done"

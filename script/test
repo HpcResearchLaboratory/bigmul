@@ -1,26 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+export LC_ALL=C LANG=C
 
 BIN="${1:-./build/bin/multiply}"
-PASS=0
-FAIL=0
 
-check() {
-    local a="$1" b="$2"
-    local got expected
-
-    got=$("${BIN}" "$a" "$b")
-    expected=$(echo "obase=16; ibase=16; ${a^^} * ${b^^}" | bc | tr -d '\\\n ')
-
-    if [ "${got^^}" = "${expected^^}" ]; then
-        PASS=$((PASS + 1))
-    else
-        FAIL=$((FAIL + 1))
-        echo "FAIL: $a * $b"
-        echo "  expected: $expected"
-        echo "  got:      $got"
-    fi
-}
+check() { echo "$1 $2 $("${BIN}" "$1" "$2")"; }
 
 check 0 0
 check 1 1
@@ -30,29 +14,21 @@ check FFFFFFFF FFFFFFFF
 check FFFFFFFFFFFFFFFF FFFFFFFFFFFFFFFF
 check 1FFFFFFFF 2
 check FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-
-# powers of two
 check 100000000 10000000000000000
 check 1 100000000000000000000000000000000
-
-# random large values
 check DEADBEEFCAFEBABE 123456789ABCDEF0
 check FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF \
       FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-
-# asymmetric sizes
 check 1 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 check ABCDEF 1
 
-# generate random tests
-if command -v openssl >/dev/null 2>&1; then
-    for bits in 64 128 256 512 1024; do
-        bytes=$((bits / 8))
-        a=$(openssl rand -hex "$bytes" | tr '[:lower:]' '[:upper:]')
-        b=$(openssl rand -hex "$bytes" | tr '[:lower:]' '[:upper:]')
-        check "$a" "$b"
-    done
-fi
-
-echo "${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+for bits in 64 128 256 512 1024; do
+    a=$(openssl rand -hex $((bits / 8)) | tr '[:lower:]' '[:upper:]')
+    b=$(openssl rand -hex $((bits / 8)) | tr '[:lower:]' '[:upper:]')
+    check "$a" "$b"
+done | perl -MMath::BigInt -lane '
+    my ($a, $b, $got) = @F;
+    my $exp = uc substr(Math::BigInt->from_hex($a)->bmul(Math::BigInt->from_hex($b))->as_hex, 2);
+    if (uc $got eq $exp) { $p++ } else { $f++; print "FAIL: $a * $b\n  exp: $exp\n  got: $got" }
+    END { $p//=0; $f//=0; print "$p passed, $f failed"; exit($f?1:0) }
+'

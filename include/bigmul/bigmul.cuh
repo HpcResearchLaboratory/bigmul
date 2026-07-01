@@ -15,4 +15,6 @@
   std::exit(1);
 }
 
+constexpr int BLOCK_SIZE = 256;
+
 auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> void;

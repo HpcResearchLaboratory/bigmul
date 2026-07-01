@@ -28,7 +28,7 @@ static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
 }
 
 static auto mul(std::vector<uint32_t>& a, const std::vector<uint32_t>& b) -> void {
-  int n = (int)std::max(a.size(), b.size());
+  auto n = std::max(a.size(), b.size());
   a.resize(n, 0);
   auto b_padded = b;
   b_padded.resize(n, 0);
@@ -41,13 +41,24 @@ static auto mul(std::vector<uint32_t>& a, const std::vector<uint32_t>& b) -> voi
 }
 
 auto main(int argc, char** argv) -> int {
-  if (argc < 3) {
-    std::cerr << "usage: multiply <hex> <hex> [<hex>...]\n";
+  std::vector<std::string> args;
+
+  if (argc >= 3) {
+    for (int i = 1; i < argc; i++) args.emplace_back(argv[i]);
+  } else {
+    std::string line;
+    while (std::getline(std::cin, line))
+      if (!line.empty()) args.push_back(std::move(line));
+  }
+
+  if (args.size() < 2) {
+    std::cerr << "usage: multiply <hex> <hex> [<hex>...]\n"
+              << "       cat a.hex b.hex | multiply\n";
     return 1;
   }
 
-  auto acc = hex_to_limbs(argv[1]);
-  for (int i = 2; i < argc; i++) mul(acc, hex_to_limbs(argv[i]));
+  auto acc = hex_to_limbs(args[0]);
+  for (size_t i = 1; i < args.size(); i++) mul(acc, hex_to_limbs(args[i]));
 
   std::cout << limbs_to_hex(acc.data(), (int)acc.size()) << '\n';
   return 0;
