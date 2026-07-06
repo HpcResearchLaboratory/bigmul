@@ -1,5 +1,3 @@
-#include <vector>
-
 #include "bigmul/bigmul.cuh"
 #include "bigmul/ntt.cuh"
 
@@ -24,6 +22,22 @@ auto mod_pow_host(uint32_t base, uint32_t exp, uint32_t p) -> uint32_t {
     exp >>= 1;
   }
   return (uint32_t)result;
+}
+
+__device__ auto mod_pow(uint32_t base, uint32_t exp, uint32_t p) -> uint32_t {
+  uint64_t result = 1, b = base;
+  while (exp > 0) {
+    if (exp & 1) result = result * b % p;
+    b = b * b % p;
+    exp >>= 1;
+  }
+  return (uint32_t)result;
+}
+
+__global__ auto compute_twiddles(uint32_t* tw, uint32_t w, uint32_t p, int n) -> void {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  tw[i] = mod_pow(w, i, p);
 }
 
 __global__ auto bit_reverse_permute(uint32_t* data, int n, int log_n) -> void {
@@ -78,10 +92,6 @@ __global__ auto pointwise_mul(uint32_t* out, const uint32_t* a, const uint32_t* 
 static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
   int log_n = __builtin_ctz(n);
 
-  std::vector<uint32_t> tw(n);
-  tw[0] = 1;
-  for (int i = 1; i < n; i++) tw[i] = (uint64_t)tw[i - 1] * w % p;
-
   static uint32_t* d_tw = nullptr;
   static size_t tw_pool = 0;
   size_t tw_bytes = n * sizeof(uint32_t);
@@ -90,9 +100,10 @@ static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
     check_cuda(cudaMalloc(&d_tw, tw_bytes));
     tw_pool = tw_bytes;
   }
-  check_cuda(cudaMemcpy(d_tw, tw.data(), tw_bytes, cudaMemcpyHostToDevice));
 
   constexpr int B = BLOCK_SIZE;
+  compute_twiddles<<<(n + B - 1) / B, B>>>(d_tw, w, p, n);
+  check_cuda(cudaGetLastError());
   bit_reverse_permute<<<(n + B - 1) / B, B>>>(d_data, n, log_n);
   check_cuda(cudaGetLastError());
 
