@@ -53,6 +53,18 @@ static auto run_batch() -> int {
   return 0;
 }
 
+static auto run_binary() -> int {
+  uint32_t n;
+  while (fread(&n, sizeof(n), 1, stdin) == 1) {
+    std::vector<uint32_t> a(n), b(n), result(2 * n, 0);
+    fread(a.data(), sizeof(uint32_t), n, stdin);
+    fread(b.data(), sizeof(uint32_t), n, stdin);
+    bigmul(a.data(), b.data(), result.data(), n);
+    fwrite(result.data(), sizeof(uint32_t), 2 * n, stdout);
+  }
+  return 0;
+}
+
 static auto run_chain(std::vector<std::string>& args) -> int {
   auto acc = hex_to_limbs(args[0]);
   for (size_t i = 1; i < args.size(); i++) {
@@ -72,6 +84,8 @@ static auto run_chain(std::vector<std::string>& args) -> int {
 auto main(int argc, char** argv) -> int {
   if (argc >= 2 && strcmp(argv[1], "--batch") == 0)
     return run_batch();
+  if (argc >= 2 && strcmp(argv[1], "--binary") == 0)
+    return run_binary();
 
   std::vector<std::string> args;
   if (argc >= 3) {

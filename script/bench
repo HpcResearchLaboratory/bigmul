@@ -21,22 +21,25 @@ ${RUN} make clean && ${RUN} make all && ${RUN} make test
 
 nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv,noheader > "${OUT}/gpu-info.txt"
 
-rand_hex() { openssl rand -hex $(($1 * 4)) | tr '[:lower:]' '[:upper:]'; }
-
-gen_batch() {
-    local count="${2:-${BATCH}}"
-    for _ in $(seq 1 "${count}"); do
-        rand_hex $1
-        rand_hex $1
-    done
+gen_binary_batch() {
+    python3 -c "
+import struct, os, sys
+n, count = int(sys.argv[1]), int(sys.argv[2])
+for _ in range(count):
+    sys.stdout.buffer.write(struct.pack('I', n))
+    sys.stdout.buffer.write(os.urandom(n * 4))
+    sys.stdout.buffer.write(os.urandom(n * 4))
+" "$1" "$2"
 }
 
-echo "timings (${BATCH} multiplications per run)..."
+rand_hex() { openssl rand -hex $(($1 * 4)) | tr '[:lower:]' '[:upper:]'; }
+
+echo "timings (${BATCH} multiplications per run, binary mode)..."
 for p in $(seq 10 21); do
     n=$((1 << p)); [ $n -gt ${MAX_N} ] && break
-    gen_batch $n > /tmp/bigmul_batch.txt
+    gen_binary_batch $n ${BATCH} > /tmp/bigmul_batch.bin
     ${HF} --warmup 1 --runs 5 --export-json "${OUT}/hf_${n}.json" \
-        "${BIN} --batch < /tmp/bigmul_batch.txt > /dev/null"
+        "${BIN} --binary < /tmp/bigmul_batch.bin > /dev/null"
 done
 
 python3 -c "
@@ -50,14 +53,15 @@ for f in files:
 " > "${OUT}/timings.csv"
 cat "${OUT}/timings.csv"
 
-echo "nsys (n=${MAX_N})..."
-gen_batch ${MAX_N} 1 > /tmp/bigmul_batch.txt
+echo "nsys (n=${MAX_N}, binary)..."
+gen_binary_batch ${MAX_N} 1 > /tmp/bigmul_batch.bin
 ${NSYS} profile -o "${OUT}/nsys" --force-overwrite true \
-    ${BIN} --batch < /tmp/bigmul_batch.txt > /dev/null
+    ${BIN} --binary < /tmp/bigmul_batch.bin > /dev/null
 ${NSYS} stats --force-export true "${OUT}/nsys.nsys-rep" > "${OUT}/nsys-summary.txt" 2>&1 || true
 
 echo "ncu (n=${NCU_N})..."
-{ rand_hex "${NCU_N}"; rand_hex "${NCU_N}"; } | ${NCU} --set full -o "${OUT}/ncu" --force \
-    ${BIN} > /dev/null 2>&1 || true
+gen_binary_batch ${NCU_N} 1 > /tmp/bigmul_batch.bin
+${NCU} --set full -o "${OUT}/ncu" --force \
+    ${BIN} --binary < /tmp/bigmul_batch.bin > /dev/null 2>&1 || true
 
 echo "done"
