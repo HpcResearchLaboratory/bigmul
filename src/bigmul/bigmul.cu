@@ -48,23 +48,34 @@ auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> vo
   constexpr int B = BLOCK_SIZE;
   const NttPrime primes[P] = {NTT_P1, NTT_P2, NTT_P3};
 
-  uint32_t *d_a_raw, *d_b_raw, *d_da, *d_db;
-  uint32_t *d_a, *d_b, *d_c[P];
-  uint64_t* d_conv;
-  uint32_t* d_result;
+  static uint32_t *d_a_raw, *d_b_raw, *d_da, *d_db;
+  static uint32_t *d_a, *d_b, *d_c[P];
+  static uint64_t* d_conv;
+  static uint32_t* d_result;
+  static size_t pool_limb = 0, pool_digit = 0;
+
   size_t limb_bytes = n * sizeof(uint32_t);
   size_t digit_bytes = m * sizeof(uint32_t);
 
-  check_cuda(cudaMalloc(&d_a_raw, limb_bytes));
-  check_cuda(cudaMalloc(&d_b_raw, limb_bytes));
-  check_cuda(cudaMalloc(&d_da, digit_bytes));
-  check_cuda(cudaMalloc(&d_db, digit_bytes));
-  check_cuda(cudaMalloc(&d_a, digit_bytes));
-  check_cuda(cudaMalloc(&d_b, digit_bytes));
-  for (int i = 0; i < P; i++)
-    check_cuda(cudaMalloc(&d_c[i], digit_bytes));
-  check_cuda(cudaMalloc(&d_conv, m * sizeof(uint64_t)));
-  check_cuda(cudaMalloc(&d_result, 2 * limb_bytes));
+  if (limb_bytes > pool_limb || digit_bytes > pool_digit) {
+    if (pool_limb) {
+      cudaFree(d_a_raw); cudaFree(d_b_raw); cudaFree(d_da); cudaFree(d_db);
+      cudaFree(d_a); cudaFree(d_b); cudaFree(d_conv); cudaFree(d_result);
+      for (int i = 0; i < P; i++) cudaFree(d_c[i]);
+    }
+    check_cuda(cudaMalloc(&d_a_raw, limb_bytes));
+    check_cuda(cudaMalloc(&d_b_raw, limb_bytes));
+    check_cuda(cudaMalloc(&d_da, digit_bytes));
+    check_cuda(cudaMalloc(&d_db, digit_bytes));
+    check_cuda(cudaMalloc(&d_a, digit_bytes));
+    check_cuda(cudaMalloc(&d_b, digit_bytes));
+    for (int i = 0; i < P; i++)
+      check_cuda(cudaMalloc(&d_c[i], digit_bytes));
+    check_cuda(cudaMalloc(&d_conv, m * sizeof(uint64_t)));
+    check_cuda(cudaMalloc(&d_result, 2 * limb_bytes));
+    pool_limb = limb_bytes;
+    pool_digit = digit_bytes;
+  }
 
   check_cuda(cudaMemcpy(d_a_raw, a, limb_bytes, cudaMemcpyHostToDevice));
   check_cuda(cudaMemcpy(d_b_raw, b, limb_bytes, cudaMemcpyHostToDevice));
@@ -101,14 +112,4 @@ auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> vo
 
   check_cuda(cudaMemcpy(result, d_result, 2 * limb_bytes, cudaMemcpyDeviceToHost));
 
-  check_cuda(cudaFree(d_a_raw));
-  check_cuda(cudaFree(d_b_raw));
-  check_cuda(cudaFree(d_da));
-  check_cuda(cudaFree(d_db));
-  check_cuda(cudaFree(d_a));
-  check_cuda(cudaFree(d_b));
-  for (int i = 0; i < P; i++)
-    check_cuda(cudaFree(d_c[i]));
-  check_cuda(cudaFree(d_conv));
-  check_cuda(cudaFree(d_result));
 }

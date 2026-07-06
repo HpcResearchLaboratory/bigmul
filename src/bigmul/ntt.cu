@@ -82,9 +82,15 @@ static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
   tw[0] = 1;
   for (int i = 1; i < n; i++) tw[i] = (uint64_t)tw[i - 1] * w % p;
 
-  uint32_t* d_tw;
-  check_cuda(cudaMalloc(&d_tw, n * sizeof(uint32_t)));
-  check_cuda(cudaMemcpy(d_tw, tw.data(), n * sizeof(uint32_t), cudaMemcpyHostToDevice));
+  static uint32_t* d_tw = nullptr;
+  static size_t tw_pool = 0;
+  size_t tw_bytes = n * sizeof(uint32_t);
+  if (tw_bytes > tw_pool) {
+    if (d_tw) cudaFree(d_tw);
+    check_cuda(cudaMalloc(&d_tw, tw_bytes));
+    tw_pool = tw_bytes;
+  }
+  check_cuda(cudaMemcpy(d_tw, tw.data(), tw_bytes, cudaMemcpyHostToDevice));
 
   constexpr int B = BLOCK_SIZE;
   bit_reverse_permute<<<(n + B - 1) / B, B>>>(d_data, n, log_n);
@@ -96,7 +102,6 @@ static auto ntt_core(uint32_t* d_data, int n, uint32_t w, uint32_t p) -> void {
   }
 
   check_cuda(cudaDeviceSynchronize());
-  check_cuda(cudaFree(d_tw));
 }
 
 auto ntt_forward(uint32_t* d_data, int n, const NttPrime& prime) -> void {

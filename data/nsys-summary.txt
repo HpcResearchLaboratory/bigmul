@@ -8,34 +8,34 @@ Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4
 
  Time (%)  Total Time (ns)  Num Calls   Avg (ns)    Med (ns)    Min (ns)  Max (ns)   StdDev (ns)           Name         
  --------  ---------------  ---------  ----------  -----------  --------  ---------  -----------  ----------------------
-     95.8       3154807360         43  73367613.0  100107040.0      1280  100134016   41876522.8  poll                  
-      3.6        119794912        657    182336.2      15840.0       352    2658016     397468.8  ioctl                 
-      0.5         14971904          3   4990634.7       3296.0      2496   14966112    8639016.8  fwrite                
-      0.0           929728         23     40423.0      16704.0     11712     249344      59146.5  mmap64                
-      0.0           672288         10     67228.8      19904.0     13024     486976     147770.6  sem_timedwait         
-      0.0           629472         62     10152.8       8560.0      3840      53056       7029.4  mmap                  
-      0.0           621024          3    207008.0     207040.0    172032     241952      34960.0  pthread_create        
-      0.0           363264         41      8860.1       9312.0      2816      14112       2755.6  open64                
-      0.0           300160         58      5175.2       4976.0      2560      12672       2043.4  munmap                
-      0.0           276128         34      8121.4       5408.0      1664      27072       6093.4  fopen                 
-      0.0            70848          1     70848.0      70848.0     70848      70848          0.0  pthread_cond_wait     
-      0.0            62080          2     31040.0      31040.0      8928      53152      31271.1  fread                 
-      0.0            59744         48      1244.7         32.0         0      44832       6733.7  fgets                 
-      0.0            57248         22      2602.2       2336.0       928       6880       1402.2  fclose                
-      0.0            42496          6      7082.7       7936.0      2112      10368       3098.5  open                  
-      0.0            34432         12      2869.3       2896.0       832       4480       1313.8  write                 
-      0.0            24352          4      6088.0       6176.0      2688       9312       2891.6  pipe2                 
-      0.0            20416          2     10208.0      10208.0      8992      11424       1719.7  socket                
-      0.0            18624         15      1241.6        800.0       384       3776       1068.2  read                  
-      0.0            12352          1     12352.0      12352.0     12352      12352          0.0  connect               
-      0.0            12288         18       682.7        816.0       192       1184        322.3  fcntl                 
-      0.0            10848         64       169.5        160.0         0        736        135.7  pthread_mutex_trylock 
-      0.0             5792          3      1930.7       1728.0       128       3936       1912.1  pthread_cond_broadcast
-      0.0             5120          1      5120.0       5120.0      5120       5120          0.0  fopen64               
-      0.0             3424          1      3424.0       3424.0      3424       3424          0.0  bind                  
-      0.0             3136          7       448.0        512.0       256        704        173.3  dup                   
-      0.0             1472          1      1472.0       1472.0      1472       1472          0.0  listen                
-      0.0              448          6        74.7         48.0         0        192         87.4  fflush                
+     96.1       3154196832         43  73353414.7  100104800.0      1760  100111776   41885823.0  poll                  
+      3.3        109292864        565    193438.7      12704.0       352    2697120     413590.4  ioctl                 
+      0.5         15730944          3   5243648.0       3392.0      2368   15725184    9077276.5  fwrite                
+      0.0          1002912         23     43604.9      17920.0     10496     246016      64234.1  mmap64                
+      0.0           674272         10     67427.2      21360.0     12800     482848     146235.2  sem_timedwait         
+      0.0           621408          3    207136.0     196960.0    177760     246688      35572.9  pthread_create        
+      0.0           567712         54     10513.2       8448.0      2784      66336       9215.4  mmap                  
+      0.0           364832         41      8898.3       9312.0      3040      14816       2872.3  open64                
+      0.0           282336         34      8304.0       5920.0      1440      28032       6371.2  fopen                 
+      0.0           166720         30      5557.3       4752.0      2976      11104       2562.3  munmap                
+      0.0            64544          2     32272.0      32272.0     10304      54240      31067.4  fread                 
+      0.0            64128          1     64128.0      64128.0     64128      64128          0.0  pthread_cond_wait     
+      0.0            56992         48      1187.3         32.0         0      42016       6343.8  fgets                 
+      0.0            55488         22      2522.2       2080.0       960       7072       1543.3  fclose                
+      0.0            43584          6      7264.0       8240.0      2048      11008       3463.0  open                  
+      0.0            34560         12      2880.0       3056.0      1024       4608       1244.5  write                 
+      0.0            29152          4      7288.0       7232.0      3680      11008       3591.3  pipe2                 
+      0.0            26240          2     13120.0      13120.0     12032      14208       1538.7  socket                
+      0.0            15616         15      1041.1        800.0       352       3136        827.7  read                  
+      0.0            13888          1     13888.0      13888.0     13888      13888          0.0  connect               
+      0.0            12128         18       673.8        720.0       224       1120        278.4  fcntl                 
+      0.0            12000         64       187.5        160.0         0        736        146.1  pthread_mutex_trylock 
+      0.0             6336          3      2112.0       2368.0       224       3744       1773.9  pthread_cond_broadcast
+      0.0             5056          1      5056.0       5056.0      5056       5056          0.0  fopen64               
+      0.0             4160          1      4160.0       4160.0      4160       4160          0.0  bind                  
+      0.0             3328          7       475.4        416.0       384        640        113.0  dup                   
+      0.0             1760          1      1760.0       1760.0      1760       1760          0.0  listen                
+      0.0              512          6        85.3         80.0         0        192         85.1  fflush                
 
 Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4/host-linux-armv8/reports/cuda_api_sum.py]... 
 
@@ -43,16 +43,15 @@ Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4
 
  Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)   Max (ns)   StdDev (ns)           Name         
  --------  ---------------  ---------  ----------  ---------  --------  ----------  -----------  ----------------------
-     88.3       1108898528         16  69306158.0  1552384.0     76576  1094347680  273345370.0  cudaDeviceSynchronize 
-      9.6        120084928         20   6004246.4   130736.0     79264   117536992   26252141.3  cudaMalloc            
-      1.3         15827648         18    879313.8  1409888.0      4672     1606080     689435.0  cudaMemcpy            
-      0.7          9252672         20    462633.6   217056.0    111136     1083808     388309.8  cudaFree              
-      0.1          1260064        226      5575.5     3136.0      2816      119840      10636.3  cudaLaunchKernel      
-      0.0           156320          2     78160.0    78160.0     65120       91200      18441.3  cuLibraryLoadData     
-      0.0            56736          3     18912.0    12128.0      6336       38272      17014.5  cudaMemset            
-      0.0            20736        226        91.8       64.0        32        1472        136.3  cuKernelGetName       
-      0.0             4576          7       653.7      800.0       384         864        217.7  cuLibraryGetKernel    
-      0.0             3456          1      3456.0     3456.0      3456        3456          0.0  cuModuleGetLoadingMode
+     89.1       1108962080         16  69310130.0  1534720.0     76000  1094524256  273391379.7  cudaDeviceSynchronize 
+      9.5        118293984         12   9857832.0    88752.0     85504   117199008   33803721.8  cudaMalloc            
+      1.3         15794432         18    877468.4  1412768.0      4352     1599232     688310.9  cudaMemcpy            
+      0.1          1194208        226      5284.1     3040.0      2784       93408       9311.9  cudaLaunchKernel      
+      0.0           144992          2     72496.0    72496.0     63520       81472      12694.0  cuLibraryLoadData     
+      0.0            55616          3     18538.7    12928.0      6240       36448      15866.3  cudaMemset            
+      0.0            25440        226       112.6       64.0        32        1888        272.1  cuKernelGetName       
+      0.0             3360          7       480.0      448.0       288         672        151.2  cuLibraryGetKernel    
+      0.0             3264          1      3264.0     3264.0      3264        3264          0.0  cuModuleGetLoadingMode
 
 Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4/host-linux-armv8/reports/cuda_gpu_kern_sum.py]... 
 
@@ -60,13 +59,13 @@ Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4
 
  Time (%)  Total Time (ns)  Instances    Avg (ns)      Med (ns)     Min (ns)    Max (ns)   StdDev (ns)                                                  Name                                                
  --------  ---------------  ---------  ------------  ------------  ----------  ----------  -----------  ----------------------------------------------------------------------------------------------------
-     98.6       1094107322          1  1094107322.0  1094107322.0  1094107322  1094107322          0.0  carry_and_assemble(const unsigned long *, unsigned int *, int, int)                                 
-      1.1         12201589        207       58944.9       54243.0       32258       77763      11699.0  butterfly(unsigned int *, const unsigned int *, int, int, unsigned int)                             
-      0.2          2265034          9      251670.4      253515.0      227754      270189      12115.0  bit_reverse_permute(unsigned int *, int, int)                                                       
-      0.0           243274          3       81091.3       81155.0       78948       83171       2112.2  pointwise_mul(unsigned int *, const unsigned int *, const unsigned int *, int, unsigned int)        
-      0.0           234539          1      234539.0      234539.0      234539      234539          0.0  crt_kernel(const unsigned int *, const unsigned int *, const unsigned int *, unsigned long *, int, …
-      0.0           217515          3       72505.0       72515.0       72484       72516         18.2  scale_mod(unsigned int *, int, unsigned int, unsigned int)                                          
-      0.0            39106          2       19553.0       19553.0       19393       19713        226.3  digit_split(const unsigned int *, unsigned int *, int)                                              
+     98.6       1094292755          1  1094292755.0  1094292755.0  1094292755  1094292755          0.0  carry_and_assemble(const unsigned long *, unsigned int *, int, int)                                 
+      1.1         12210615        207       58988.5       54306.0       32193       77636      11748.0  butterfly(unsigned int *, const unsigned int *, int, int, unsigned int)                             
+      0.2          2148962          9      238773.6      245163.0      217898      259468      15550.9  bit_reverse_permute(unsigned int *, int, int)                                                       
+      0.0           249899          3       83299.7       82212.0       81795       85892       2254.7  pointwise_mul(unsigned int *, const unsigned int *, const unsigned int *, int, unsigned int)        
+      0.0           225258          1      225258.0      225258.0      225258      225258          0.0  crt_kernel(const unsigned int *, const unsigned int *, const unsigned int *, unsigned long *, int, …
+      0.0           215659          3       71886.3       71876.0       71875       71908         18.8  scale_mod(unsigned int *, int, unsigned int, unsigned int)                                          
+      0.0            39490          2       19745.0       19745.0       19393       20097        497.8  digit_split(const unsigned int *, unsigned int *, int)                                              
 
 Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4/host-linux-armv8/reports/cuda_gpu_mem_time_sum.py]... 
 
@@ -74,10 +73,10 @@ Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4
 
  Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)            Operation           
  --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ------------------------------
-     87.8         13768894     11  1251717.6  1398529.0    522361   1479973     360942.0  [CUDA memcpy Host-to-Device]  
-      9.0          1418498      1  1418498.0  1418498.0   1418498   1418498          0.0  [CUDA memcpy Device-to-Host]  
-      2.8           445940      6    74323.3    68883.0     35426    105892      26310.3  [CUDA memcpy Device-to-Device]
-      0.3            53731      3    17910.3    19585.0     14209     19937       3210.3  [CUDA memset]                 
+     87.9         13713656     11  1246696.0  1388448.0    514104   1475908     358942.9  [CUDA memcpy Host-to-Device]  
+      9.1          1413378      1  1413378.0  1413378.0   1413378   1413378          0.0  [CUDA memcpy Device-to-Host]  
+      2.7           424979      6    70829.8    68835.0     35586     95524      21693.8  [CUDA memcpy Device-to-Device]
+      0.3            52803      3    17601.0    19745.0     13217     19841       3797.0  [CUDA memset]                 
 
 Processing [data/nsys.sqlite] with [/usr/local/cuda-12.4/nsight-systems-2023.4.4/host-linux-armv8/reports/cuda_gpu_mem_size_sum.py]... 
 
