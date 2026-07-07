@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -33,23 +34,50 @@ static auto limbs_to_hex(const uint32_t* limbs, int n) -> std::string {
   return out;
 }
 
-static auto mul_pair(const std::string& ha, const std::string& hb) -> std::string {
-  auto a = hex_to_limbs(ha);
-  auto b = hex_to_limbs(hb);
-  auto n = std::max(a.size(), b.size());
-  a.resize(n, 0);
-  b.resize(n, 0);
+static constexpr int MAX_GPU_BATCH = 128;
 
-  std::vector<uint32_t> result(2 * n, 0);
-  bigmul(a.data(), b.data(), result.data(), n);
+// Runs up to MAX_GPU_BATCH pending pairs through a single bigmul_batch()
+// call: all pairs are padded to the batch's largest limb count so every
+// kernel launch handles the whole group in one shot instead of one launch
+// per pair.
+static auto flush_batch(std::vector<std::string>& pending_a, std::vector<std::string>& pending_b)
+    -> void {
+  int batch = (int)pending_a.size();
+  if (batch == 0) return;
 
-  return limbs_to_hex(result.data(), 2 * n);
+  std::vector<std::vector<uint32_t>> limbs_a(batch), limbs_b(batch);
+  size_t n = 1;
+  for (int i = 0; i < batch; i++) {
+    limbs_a[i] = hex_to_limbs(pending_a[i]);
+    limbs_b[i] = hex_to_limbs(pending_b[i]);
+    n = std::max({n, limbs_a[i].size(), limbs_b[i].size()});
+  }
+
+  std::vector<uint32_t> a_buf((size_t)batch * n, 0), b_buf((size_t)batch * n, 0);
+  std::vector<uint32_t> result_buf((size_t)batch * 2 * n, 0);
+  for (int i = 0; i < batch; i++) {
+    std::copy(limbs_a[i].begin(), limbs_a[i].end(), a_buf.begin() + (size_t)i * n);
+    std::copy(limbs_b[i].begin(), limbs_b[i].end(), b_buf.begin() + (size_t)i * n);
+  }
+
+  bigmul_batch(a_buf.data(), b_buf.data(), result_buf.data(), (int)n, batch);
+
+  for (int i = 0; i < batch; i++)
+    std::cout << limbs_to_hex(result_buf.data() + (size_t)i * 2 * n, 2 * n) << '\n';
+
+  pending_a.clear();
+  pending_b.clear();
 }
 
 static auto run_batch() -> int {
   std::string a, b;
-  while (std::getline(std::cin, a) && std::getline(std::cin, b))
-    std::cout << mul_pair(a, b) << '\n';
+  std::vector<std::string> pending_a, pending_b;
+  while (std::getline(std::cin, a) && std::getline(std::cin, b)) {
+    pending_a.push_back(std::move(a));
+    pending_b.push_back(std::move(b));
+    if ((int)pending_a.size() == MAX_GPU_BATCH) flush_batch(pending_a, pending_b);
+  }
+  flush_batch(pending_a, pending_b);
   return 0;
 }
 

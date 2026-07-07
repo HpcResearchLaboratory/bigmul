@@ -62,6 +62,21 @@ __global__ static void carry_sequential(const uint64_t* __restrict__ d_src,
   }
 }
 
+// One block per batch item; identical math, pointers offset by blockIdx.x.
+__global__ static void carry_sequential_batch(const uint64_t* __restrict__ d_src,
+                                              uint32_t* __restrict__ d_dst, int n_limbs,
+                                              int n_src, int batch) {
+  const uint64_t* src = d_src + (size_t)blockIdx.x * n_src;
+  uint32_t* dst = d_dst + (size_t)blockIdx.x * n_limbs;
+  uint64_t carry = 0;
+  for (int limb = 0; limb < n_limbs; limb++) {
+    int j0 = 2 * limb, j1 = j0 + 1;
+    uint64_t a = (j0 < n_src) ? src[j0] : 0ULL;
+    uint64_t b = (j1 < n_src) ? src[j1] : 0ULL;
+    dst[limb] = combine2(a, b, carry, &carry);
+  }
+}
+
 // ── CARRY_ALG_SINGLE_TILE ────────────────────────────────────────────────────
 // 1 block, CARRY_TILE threads, each owning one 32-bit limb. Shared-memory
 // carry propagation across the whole tile per do-while iteration, tile
@@ -124,6 +139,63 @@ __global__ static void carry_32bits(const uint64_t* __restrict__ d_src,
 
     tile_carry = escape_total;
     if (limb < n_limbs) d_dst[limb] = packed;
+  }
+}
+
+// One block per batch item; identical body, pointers offset by blockIdx.x.
+__global__ static void carry_32bits_batch(const uint64_t* __restrict__ d_src,
+                                          uint32_t* __restrict__ d_dst, int n_limbs, int n_src,
+                                          int batch) {
+  const uint64_t* d_src_b = d_src + (size_t)blockIdx.x * n_src;
+  uint32_t* d_dst_b = d_dst + (size_t)blockIdx.x * n_limbs;
+  int tid = threadIdx.x;
+
+  __shared__ uint64_t s_carry[CARRY_TILE];
+  __shared__ int s_has_carry[2];
+  int hc_idx = 0;
+
+  uint64_t tile_carry = 0;
+  int n_tiles = (n_limbs + CARRY_TILE - 1) / CARRY_TILE;
+
+  for (int ti = 0; ti < n_tiles; ti++) {
+    int limb = ti * CARRY_TILE + tid;
+    int j0 = 2 * limb, j1 = j0 + 1;
+    uint64_t raw0 = (j0 < n_src) ? d_src_b[j0] : 0ULL;
+    uint64_t raw1 = (j1 < n_src) ? d_src_b[j1] : 0ULL;
+
+    uint64_t c = (tid == 0) ? tile_carry : 0ULL;
+    uint32_t packed = 0;
+    uint64_t escape_total = 0;
+    bool first = true;
+
+    do {
+      hc_idx ^= 1;
+      uint64_t a, b;
+      if (first) {
+        a = raw0;
+        b = raw1;
+        first = false;
+      } else {
+        a = packed & LIMB_MASK;
+        b = (packed >> 16) & LIMB_MASK;
+      }
+      uint64_t round_escape;
+      packed = combine2(a, b, c, &round_escape);
+
+      s_carry[tid] = round_escape;
+      if (tid == 0) s_has_carry[hc_idx] = 0;
+      __syncthreads();
+
+      escape_total += s_carry[CARRY_TILE - 1];
+      c = (tid > 0) ? s_carry[tid - 1] : 0ULL;
+
+      if (c > 0) s_has_carry[hc_idx] = 1;
+      __syncthreads();
+
+    } while (s_has_carry[hc_idx]);
+
+    tile_carry = escape_total;
+    if (limb < n_limbs) d_dst_b[limb] = packed;
   }
 }
 
@@ -218,6 +290,110 @@ __global__ static void carry_inter_tiles(uint32_t* __restrict__ d_dst,
     int j_start = m * CARRY_TILE;
     int j_end = min(j_start + CARRY_TILE, n_limbs);
     for (int limb = j_start; c > 0 && limb < j_end; limb++) c = add_carry_into_limb(d_dst, limb, c);
+    r = c;
+  }
+}
+
+// Batched MULTI_TILE: blockIdx.y (intra copy) / a leading batch dimension
+// on the grid selects the item; d_tile_carry/d_first_tile get a
+// per-item stride of n_tiles / 1 respectively.
+
+__global__ static void carry_intra_copy_batch(const uint64_t* __restrict__ d_src,
+                                              uint32_t* __restrict__ d_dst,
+                                              uint64_t* __restrict__ d_tile_carry,
+                                              int* __restrict__ d_first_tile, int n_limbs,
+                                              int n_src, int n_tiles) {
+  int tile = blockIdx.x, b = blockIdx.y, tid = threadIdx.x;
+  const uint64_t* src = d_src + (size_t)b * n_src;
+  uint32_t* dst = d_dst + (size_t)b * n_limbs;
+  uint64_t* tile_carry = d_tile_carry + (size_t)b * n_tiles;
+  int* first_tile = d_first_tile + b;
+  if (tile == 0 && tid == 0) *first_tile = n_tiles;
+
+  int limb = tile * CARRY_TILE + tid;
+  int j0 = 2 * limb, j1 = j0 + 1;
+  uint64_t raw0 = (j0 < n_src) ? src[j0] : 0ULL;
+  uint64_t raw1 = (j1 < n_src) ? src[j1] : 0ULL;
+
+  __shared__ uint64_t s_carry[CARRY_TILE];
+  __shared__ int s_has_carry[2];
+  int hc_idx = 0;
+
+  uint64_t c = 0;
+  uint32_t packed = 0;
+  uint64_t escape_total = 0;
+  bool first = true;
+
+  do {
+    hc_idx ^= 1;
+    uint64_t a, b2;
+    if (first) {
+      a = raw0;
+      b2 = raw1;
+      first = false;
+    } else {
+      a = packed & LIMB_MASK;
+      b2 = (packed >> 16) & LIMB_MASK;
+    }
+    uint64_t round_escape;
+    packed = combine2(a, b2, c, &round_escape);
+
+    s_carry[tid] = round_escape;
+    if (tid == 0) s_has_carry[hc_idx] = 0;
+    __syncthreads();
+
+    escape_total += s_carry[CARRY_TILE - 1];
+    c = (tid > 0) ? s_carry[tid - 1] : 0ULL;
+
+    if (c > 0) s_has_carry[hc_idx] = 1;
+    __syncthreads();
+
+  } while (s_has_carry[hc_idx]);
+
+  if (limb < n_limbs) dst[limb] = packed;
+  if (tid == 0) tile_carry[tile] = escape_total;
+}
+
+__global__ static void carry_propagate_tiles_batch(uint32_t* __restrict__ d_dst,
+                                                    uint64_t* __restrict__ d_tile_carry,
+                                                    int* __restrict__ d_first_tile, int n_limbs,
+                                                    int n_tiles) {
+  int t = blockIdx.x * blockDim.x + threadIdx.x + 1;  // receiver tile, 1..n_tiles-1
+  int b = blockIdx.y;
+  if (t >= n_tiles) return;
+
+  uint32_t* dst = d_dst + (size_t)b * n_limbs;
+  uint64_t* tile_carry = d_tile_carry + (size_t)b * n_tiles;
+  int* first_tile = d_first_tile + b;
+
+  uint64_t c = tile_carry[t - 1];
+  if (c != 0) {
+    int j_start = t * CARRY_TILE;
+    int j_end = min(j_start + CARRY_TILE, n_limbs);
+    for (int limb = j_start; c > 0 && limb < j_end; limb++) c = add_carry_into_limb(dst, limb, c);
+  }
+  tile_carry[t - 1] = c;
+  if (c != 0) atomicMin(first_tile, t + 1);
+}
+
+__global__ static void carry_inter_tiles_batch(uint32_t* __restrict__ d_dst,
+                                               const uint64_t* __restrict__ d_tile_carry,
+                                               const int* __restrict__ d_first_tile, int n_limbs,
+                                               int n_tiles) {
+  int b = blockIdx.x;
+  uint32_t* dst = d_dst + (size_t)b * n_limbs;
+  const uint64_t* tile_carry = d_tile_carry + (size_t)b * n_tiles;
+  int m_start = d_first_tile[b];
+  if (m_start >= n_tiles) return;
+
+  uint64_t r = 0;
+  for (int m = m_start; m < n_tiles; m++) {
+    uint64_t c = r + tile_carry[m - 2];
+    r = 0;
+    if (c == 0) continue;
+    int j_start = m * CARRY_TILE;
+    int j_end = min(j_start + CARRY_TILE, n_limbs);
+    for (int limb = j_start; c > 0 && limb < j_end; limb++) c = add_carry_into_limb(dst, limb, c);
     r = c;
   }
 }
@@ -389,6 +565,84 @@ __global__ static void pscan_normalize(const uint64_t* __restrict__ d_src,
   }
 }
 
+// Batched: one block per batch item (blockIdx.x); body identical, pointers
+// offset by the item's stride.
+__global__ static void pscan_normalize_batch(const uint64_t* __restrict__ d_src,
+                                             uint32_t* __restrict__ d_dst, int n_limbs, int n_src,
+                                             int batch) {
+  const uint64_t* d_src_b = d_src + (size_t)blockIdx.x * n_src;
+  uint32_t* d_dst_b = d_dst + (size_t)blockIdx.x * n_limbs;
+
+  int t = threadIdx.x;
+  int n_digits = 2 * n_limbs;
+
+  __shared__ uint64_t sraw[2 * CARRY_TILE];
+  __shared__ unsigned wG[PSCAN_NWARPS];
+  __shared__ unsigned wP[PSCAN_NWARPS];
+  __shared__ uint64_t sprev[3];  // raw digit values at positions base-1, base-2, base-3
+
+  if (t < 3) sprev[t] = 0ULL;
+  int cinA = 0, cinB = 0, cinC = 0;  // persistent per-channel carry across tile iterations
+
+  for (int base = 0; base < n_digits; base += 2 * CARRY_TILE) {
+    int lo_idx = base + 2 * t, hi_idx = lo_idx + 1;
+    sraw[2 * t] = (lo_idx < n_src) ? d_src_b[lo_idx] : 0ULL;
+    sraw[2 * t + 1] = (hi_idx < n_src) ? d_src_b[hi_idx] : 0ULL;
+    __syncthreads();
+
+    auto raw_at = [&](int k) -> uint64_t {
+      if (k >= 0) return sraw[k];
+      return sprev[-k - 1];
+    };
+
+    int lo = 2 * t, hi = lo + 1;
+    uint64_t sA_lo = (raw_at(lo) & LIMB_MASK) + ((raw_at(lo - 1) >> 16) & LIMB_MASK);
+    uint64_t sA_hi = (raw_at(hi) & LIMB_MASK) + ((raw_at(hi - 1) >> 16) & LIMB_MASK);
+    uint64_t sB_lo = ((raw_at(lo - 2) >> 32) & LIMB_MASK) + ((raw_at(lo - 3) >> 48) & LIMB_MASK);
+    uint64_t sB_hi = ((raw_at(hi - 2) >> 32) & LIMB_MASK) + ((raw_at(hi - 3) >> 48) & LIMB_MASK);
+
+    GP gA_lo = gp_of(sA_lo), gA_hi = gp_of(sA_hi);
+    GP gA_limb = gp_compose(gA_lo, gA_hi);
+    int coutA;
+    int cinA_limb = cla_scan(gA_limb.g, gA_limb.p, cinA, wG, wP, &coutA);
+    cinA = coutA;
+    uint64_t digitA_lo = ((sA_lo & LIMB_MASK) + (uint64_t)cinA_limb) & LIMB_MASK;
+    uint64_t midA = gA_lo.g | (gA_lo.p & (unsigned)cinA_limb);
+    uint64_t digitA_hi = ((sA_hi & LIMB_MASK) + midA) & LIMB_MASK;
+
+    GP gB_lo = gp_of(sB_lo), gB_hi = gp_of(sB_hi);
+    GP gB_limb = gp_compose(gB_lo, gB_hi);
+    int coutB;
+    int cinB_limb = cla_scan(gB_limb.g, gB_limb.p, cinB, wG, wP, &coutB);
+    cinB = coutB;
+    uint64_t digitB_lo = ((sB_lo & LIMB_MASK) + (uint64_t)cinB_limb) & LIMB_MASK;
+    uint64_t midB = gB_lo.g | (gB_lo.p & (unsigned)cinB_limb);
+    uint64_t digitB_hi = ((sB_hi & LIMB_MASK) + midB) & LIMB_MASK;
+
+    uint64_t sC_lo = digitA_lo + digitB_lo;
+    uint64_t sC_hi = digitA_hi + digitB_hi;
+    GP gC_lo = gp_of(sC_lo), gC_hi = gp_of(sC_hi);
+    GP gC_limb = gp_compose(gC_lo, gC_hi);
+    int coutC;
+    int cinC_limb = cla_scan(gC_limb.g, gC_limb.p, cinC, wG, wP, &coutC);
+    cinC = coutC;
+    uint64_t digit_lo = ((sC_lo & LIMB_MASK) + (uint64_t)cinC_limb) & LIMB_MASK;
+    uint64_t midC = gC_lo.g | (gC_lo.p & (unsigned)cinC_limb);
+    uint64_t digit_hi = ((sC_hi & LIMB_MASK) + midC) & LIMB_MASK;
+
+    int limb = base / 2 + t;
+    if (limb < n_limbs) d_dst_b[limb] = (uint32_t)(digit_lo | (digit_hi << 16));
+
+    __syncthreads();
+    if (t == 0) {
+      sprev[0] = sraw[2 * CARRY_TILE - 1];
+      sprev[1] = sraw[2 * CARRY_TILE - 2];
+      sprev[2] = sraw[2 * CARRY_TILE - 3];
+    }
+    __syncthreads();
+  }
+}
+
 #else
 #error \
     "CARRY_NORM_ALG must be CARRY_ALG_SEQUENTIAL, CARRY_ALG_SINGLE_TILE, CARRY_ALG_MULTI_TILE or CARRY_ALG_PREFIX_SCAN"
@@ -430,6 +684,46 @@ auto carry_and_assemble(const uint64_t* d_conv, uint32_t* d_result, int n, int m
 
 #elif CARRY_NORM_ALG == CARRY_ALG_PREFIX_SCAN
   pscan_normalize<<<1, CARRY_TILE>>>(d_conv, d_result, n_limbs, m);
+  check_cuda(cudaGetLastError());
+#endif
+}
+
+auto carry_and_assemble_batch(const uint64_t* d_conv, uint32_t* d_result, int n, int m, int batch,
+                              uint64_t* d_scratch) -> void {
+  int n_limbs = 2 * n;
+
+#if CARRY_NORM_ALG == CARRY_ALG_SEQUENTIAL
+  carry_sequential_batch<<<batch, 1>>>(d_conv, d_result, n_limbs, m, batch);
+  check_cuda(cudaGetLastError());
+
+#elif CARRY_NORM_ALG == CARRY_ALG_SINGLE_TILE
+  carry_32bits_batch<<<batch, CARRY_TILE>>>(d_conv, d_result, n_limbs, m, batch);
+  check_cuda(cudaGetLastError());
+
+#elif CARRY_NORM_ALG == CARRY_ALG_MULTI_TILE
+  int n_tiles = (n_limbs + CARRY_TILE - 1) / CARRY_TILE;
+
+  // d_scratch is caller-owned (>= batch*m uint64_t, far larger than the
+  // batch*(n_tiles+1) elements needed here), so no allocation happens here.
+  uint64_t* d_tile_carry = d_scratch;
+  int* d_first_tile = reinterpret_cast<int*>(d_scratch + (size_t)batch * n_tiles);
+
+  dim3 grid_intra(n_tiles, batch);
+  carry_intra_copy_batch<<<grid_intra, CARRY_TILE>>>(d_conv, d_result, d_tile_carry, d_first_tile,
+                                                     n_limbs, m, n_tiles);
+  check_cuda(cudaGetLastError());
+  if (n_tiles > 1) {
+    constexpr int THR = 256;
+    dim3 grid_prop((n_tiles - 1 + THR - 1) / THR, batch);
+    carry_propagate_tiles_batch<<<grid_prop, THR>>>(d_result, d_tile_carry, d_first_tile, n_limbs,
+                                                    n_tiles);
+    check_cuda(cudaGetLastError());
+    carry_inter_tiles_batch<<<batch, 1>>>(d_result, d_tile_carry, d_first_tile, n_limbs, n_tiles);
+    check_cuda(cudaGetLastError());
+  }
+
+#elif CARRY_NORM_ALG == CARRY_ALG_PREFIX_SCAN
+  pscan_normalize_batch<<<batch, CARRY_TILE>>>(d_conv, d_result, n_limbs, m, batch);
   check_cuda(cudaGetLastError());
 #endif
 }
