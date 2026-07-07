@@ -2,7 +2,7 @@
 
 NVCC ?= nvcc
 AR ?= ar
-NVCCFLAGS ?= -O2
+NVCCFLAGS ?= -O2 -std=c++20
 CPPFLAGS := -MMD -MP $(addprefix -I,$(shell find src include -type d 2>/dev/null))
 
 BIGMUL := build/lib/libbigmul.a
