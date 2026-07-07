@@ -16,5 +16,5 @@ auto mod_pow_host(uint64_t base, uint64_t exp, uint64_t p) -> uint64_t;
 
 auto ntt_forward(uint64_t* d_data, int n, const NttPrime& prime) -> void;
 auto ntt_inverse(uint64_t* d_data, int n, const NttPrime& prime) -> void;
-auto ntt_pointwise_mul(uint64_t* d_out, const uint64_t* d_a, const uint64_t* d_b, int n,
-                       uint64_t p) -> void;
+auto ntt_inverse_pointwise(uint64_t* d_out, const uint64_t* d_a, const uint64_t* d_b, int n,
+                           const NttPrime& prime) -> void;

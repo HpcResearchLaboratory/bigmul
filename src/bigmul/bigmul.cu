@@ -70,8 +70,7 @@ auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> vo
 
   ntt_forward(d_a, m, prime);
   ntt_forward(d_b, m, prime);
-  ntt_pointwise_mul(d_conv, d_a, d_b, m, prime.p);
-  ntt_inverse(d_conv, m, prime);
+  ntt_inverse_pointwise(d_conv, d_a, d_b, m, prime);
 
   check_cuda(cudaMemset(d_result, 0, 2 * limb_bytes));
   carry_and_assemble<<<1, 1>>>(d_conv, d_result, n, m);
