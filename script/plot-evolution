@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+import csv
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
+COLORS = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4"]
+LABELS = [
+    "v0 baseline",
+    "v1 gpu-crt",
+    "v2 binary I/O",
+    "v3 mem pool",
+    "v4 gpu-twiddle",
+    "v5 one-prime",
+    "v6 carry-paralelo",
+]
+
+BATCH = 10
+OUT = "result"
+
+plt.rcParams.update({
+    "figure.facecolor": "#fcfcfb",
+    "axes.facecolor": "#fcfcfb",
+    "axes.edgecolor": "#d0cfca",
+    "axes.labelcolor": "#0b0b0b",
+    "text.color": "#0b0b0b",
+    "xtick.color": "#52514e",
+    "ytick.color": "#52514e",
+    "grid.color": "#e8e7e3",
+    "grid.linewidth": 0.6,
+    "font.size": 11,
+    "axes.titlesize": 14,
+    "axes.titleweight": "bold",
+    "figure.dpi": 600,
+    "savefig.dpi": 600,
+})
+
+# Read data
+ns = []
+versions = [[] for _ in range(7)]
+
+with open("/tmp/all_timings.csv") as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        ns.append(int(row["n"]))
+        for i, key in enumerate(["v0", "v1", "v2", "v3", "v4", "v5", "v6"]):
+            versions[i].append(float(row[key]) / BATCH)
+
+# Compute speedup relative to v0
+baseline = versions[0]
+speedups = []
+for v in versions:
+    speedups.append([b / t for b, t in zip(baseline, v)])
+
+# Generate progressive plots
+for num_versions in range(1, 8):
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    ax.axhline(y=1, color="#999", linewidth=1.5, linestyle="--", label="v0 baseline")
+
+    for i in range(1, num_versions):
+        ax.plot(ns, speedups[i], color=COLORS[i], linewidth=2,
+                marker="o", markersize=5, label=LABELS[i])
+
+    ax.set_xscale("log", base=2)
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.set_xlabel("n (limbs)")
+    ax.set_ylabel("speedup (× baseline)")
+    ax.set_title("Optimization Progress — Speedup vs Baseline")
+    ax.set_yscale("log", base=2)
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: f"{y:.1f}×" if y < 2 else f"{y:.0f}×"))
+    ax.set_ylim(0.9, 16)
+    ax.grid(True, axis="y")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(f"{OUT}/evolution_{num_versions}.png")
+    plt.close()
+    print(f"  {OUT}/evolution_{num_versions}.png")
