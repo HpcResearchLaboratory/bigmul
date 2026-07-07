@@ -3,7 +3,7 @@ import csv
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
-COLORS = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4"]
+COLORS = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834", "#666666"]
 LABELS = [
     "v0 baseline",
     "v1 gpu-crt",
@@ -12,6 +12,8 @@ LABELS = [
     "v4 gpu-twiddle",
     "v5 one-prime",
     "v6 carry-paralelo",
+    "v7 batching",
+    "v8 paralel-input",
 ]
 
 BATCH = 10
@@ -36,39 +38,72 @@ plt.rcParams.update({
 
 # Read data
 ns = []
-versions = [[] for _ in range(7)]
+versions = [[] for _ in range(9)]
+cols = ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"]
 
-with open("/tmp/all_timings.csv") as f:
+with open("result/combined/timings.csv") as f:
     reader = csv.DictReader(f)
     for row in reader:
-        ns.append(int(row["n"]))
-        for i, key in enumerate(["v0", "v1", "v2", "v3", "v4", "v5", "v6"]):
-            versions[i].append(float(row[key]) / BATCH)
+        n = int(row["n"])
+        ns.append(n)
+        for i, key in enumerate(cols):
+            val = row[key]
+            versions[i].append(float(val) / BATCH if val else None)
 
-# Compute speedup relative to v0
+# Compute speedup relative to v0 (only where both have data)
 baseline = versions[0]
-speedups = []
-for v in versions:
-    speedups.append([b / t for b, t in zip(baseline, v)])
+
+def extrapolate_baseline(ns, baseline):
+    """Extrapolate v0 for sizes where it has no data, using O(n log n) fit."""
+    import math
+    known = [(n, b) for n, b in zip(ns, baseline) if b is not None]
+    if len(known) < 2:
+        return baseline
+    n1, b1 = known[-2]
+    n2, b2 = known[-1]
+    ratio = (n2 * math.log2(n2)) / (n1 * math.log2(n1))
+    growth = b2 / b1
+    result = list(baseline)
+    for i, (n, b) in enumerate(zip(ns, baseline)):
+        if b is None:
+            r = (n * math.log2(n)) / (n2 * math.log2(n2))
+            result[i] = b2 * r * (growth / ratio)
+    return result
+
+baseline = extrapolate_baseline(ns, baseline)
+
+def speedup_line(v):
+    return [(b / t if b and t else None) for b, t in zip(baseline, v)]
+
+speedups = [speedup_line(v) for v in versions]
 
 # Generate progressive plots
-for num_versions in range(1, 8):
+for num_versions in range(1, 10):
     fig, ax = plt.subplots(figsize=(9, 5))
 
     ax.axhline(y=1, color="#999", linewidth=1.5, linestyle="--", label="v0 baseline")
 
     for i in range(1, num_versions):
-        ax.plot(ns, speedups[i], color=COLORS[i], linewidth=2,
-                marker="o", markersize=5, label=LABELS[i])
+        xs = [n for n, s in zip(ns, speedups[i]) if s is not None]
+        ys = [s for s in speedups[i] if s is not None]
+        if xs:
+            ax.plot(xs, ys, color=COLORS[i], linewidth=2,
+                    marker="o", markersize=5, label=LABELS[i])
 
     ax.set_xscale("log", base=2)
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.set_xticks(ns)
+    def fmt_n(x, _):
+        x = int(x)
+        if x >= 1048576: return f"{x // 1048576}M"
+        if x >= 1024: return f"{x // 1024}K"
+        return str(x)
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(fmt_n))
     ax.set_xlabel("n (limbs)")
     ax.set_ylabel("speedup (× baseline)")
     ax.set_title("Optimization Progress — Speedup vs Baseline")
     ax.set_yscale("log", base=2)
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: f"{y:.1f}×" if y < 2 else f"{y:.0f}×"))
-    ax.set_ylim(0.9, 16)
+    ax.set_ylim(0.9, 40)
     ax.grid(True, axis="y")
     ax.legend(loc="upper left", fontsize=9)
     fig.tight_layout()

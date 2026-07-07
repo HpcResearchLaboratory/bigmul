@@ -1,5 +1,3 @@
-#include <omp.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -49,21 +47,14 @@ static auto flush_batch(std::vector<std::string>& pending_a, std::vector<std::st
 
   std::vector<std::vector<uint32_t>> limbs_a(batch), limbs_b(batch);
   size_t n = 1;
-#pragma omp parallel for
   for (int i = 0; i < batch; i++) {
     limbs_a[i] = hex_to_limbs(pending_a[i]);
     limbs_b[i] = hex_to_limbs(pending_b[i]);
-  }
-
-  for (int i = 0; i < batch; i++) {
     n = std::max({n, limbs_a[i].size(), limbs_b[i].size()});
   }
 
   std::vector<uint32_t> a_buf((size_t)batch * n, 0), b_buf((size_t)batch * n, 0);
   std::vector<uint32_t> result_buf((size_t)batch * 2 * n, 0);
-  // Each iteration writes to disjoint [i*n, i*n+n) slices, so this is safe
-  // to parallelize; worth it once n is in the thousands of limbs.
-#pragma omp parallel for
   for (int i = 0; i < batch; i++) {
     std::copy(limbs_a[i].begin(), limbs_a[i].end(), a_buf.begin() + (size_t)i * n);
     std::copy(limbs_b[i].begin(), limbs_b[i].end(), b_buf.begin() + (size_t)i * n);
@@ -106,7 +97,6 @@ static auto flush_binary_batch(std::vector<std::vector<uint32_t>>& pending_a,
 
   std::vector<uint32_t> a_buf((size_t)batch * n, 0), b_buf((size_t)batch * n, 0);
   std::vector<uint32_t> result_buf((size_t)batch * 2 * n, 0);
-#pragma omp parallel for
   for (int i = 0; i < batch; i++) {
     std::copy(pending_a[i].begin(), pending_a[i].end(), a_buf.begin() + (size_t)i * n);
     std::copy(pending_b[i].begin(), pending_b[i].end(), b_buf.begin() + (size_t)i * n);
@@ -155,10 +145,10 @@ static auto run_chain(std::vector<std::string>& args) -> int {
 }
 
 auto main(int argc, char** argv) -> int {
-  omp_set_num_threads(omp_get_num_procs());
-
-  if (argc >= 2 && strcmp(argv[1], "--batch") == 0) return run_batch();
-  if (argc >= 2 && strcmp(argv[1], "--binary") == 0) return run_binary();
+  if (argc >= 2 && strcmp(argv[1], "--batch") == 0)
+    return run_batch();
+  if (argc >= 2 && strcmp(argv[1], "--binary") == 0)
+    return run_binary();
 
   std::vector<std::string> args;
   if (argc >= 3) {
