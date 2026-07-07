@@ -1,4 +1,5 @@
 #include "bigmul/bigmul.cuh"
+#include "bigmul/carry.cuh"
 #include "bigmul/ntt.cuh"
 
 __global__ auto digit_split(const uint32_t* limbs, uint64_t* digits, int n) -> void {
@@ -6,21 +7,6 @@ __global__ auto digit_split(const uint32_t* limbs, uint64_t* digits, int n) -> v
   if (i >= n) return;
   digits[2 * i] = limbs[i] & 0xFFFF;
   digits[2 * i + 1] = limbs[i] >> 16;
-}
-
-__global__ auto carry_and_assemble(const uint64_t* conv, uint32_t* result, int n, int m) -> void {
-  uint64_t carry = 0;
-  for (int i = 0; i < 4 * n; i++) {
-    uint64_t val = (i < m) ? conv[i] : 0;
-    val += carry;
-    uint32_t digit = (uint32_t)(val & 0xFFFF);
-    carry = val >> 16;
-    int limb = i / 2;
-    if (i % 2 == 0)
-      result[limb] = digit;
-    else
-      result[limb] |= digit << 16;
-  }
 }
 
 auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> void {
@@ -73,9 +59,11 @@ auto bigmul(const uint32_t* a, const uint32_t* b, uint32_t* result, int n) -> vo
   ntt_pointwise_mul(d_conv, d_a, d_b, m, prime.p);
   ntt_inverse(d_conv, m, prime);
 
+  // d_a is free at this point (its contents were already consumed by
+  // ntt_pointwise_mul/ntt_inverse), so reuse it as carry_and_assemble's
+  // scratch space instead of allocating a new buffer there.
   check_cuda(cudaMemset(d_result, 0, 2 * limb_bytes));
-  carry_and_assemble<<<1, 1>>>(d_conv, d_result, n, m);
-  check_cuda(cudaGetLastError());
+  carry_and_assemble(d_conv, d_result, n, m, d_a);
   check_cuda(cudaDeviceSynchronize());
 
   check_cuda(cudaMemcpy(result, d_result, 2 * limb_bytes, cudaMemcpyDeviceToHost));
