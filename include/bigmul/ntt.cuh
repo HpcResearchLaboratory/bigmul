@@ -18,3 +18,11 @@ auto ntt_forward(uint64_t* d_data, int n, const NttPrime& prime) -> void;
 auto ntt_inverse(uint64_t* d_data, int n, const NttPrime& prime) -> void;
 auto ntt_pointwise_mul(uint64_t* d_out, const uint64_t* d_a, const uint64_t* d_b, int n,
                        uint64_t p) -> void;
+
+// Batched variants: d_data/d_out/d_a/d_b hold `batch` contiguous blocks of
+// n elements each. The twiddle table (depends only on n) is computed once
+// and shared across the whole batch.
+auto ntt_forward_batch(uint64_t* d_data, int n, int batch, const NttPrime& prime) -> void;
+auto ntt_inverse_batch(uint64_t* d_data, int n, int batch, const NttPrime& prime) -> void;
+auto ntt_pointwise_mul_batch(uint64_t* d_out, const uint64_t* d_a, const uint64_t* d_b, int n,
+                             int batch, uint64_t p) -> void;

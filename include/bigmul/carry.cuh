@@ -38,3 +38,11 @@
 // one of the NTT input buffers) to avoid an extra allocation here.
 auto carry_and_assemble(const uint64_t* d_conv, uint32_t* d_result, int n, int m,
                         uint64_t* d_scratch) -> void;
+
+// Batched variant: d_conv holds `batch` contiguous blocks of m raw
+// coefficients, d_result `batch` contiguous blocks of 2*n packed limbs.
+// d_scratch must have at least batch * (n_tiles+1) capacity in terms of
+// uint64_t elements, where n_tiles = ceil(2*n / CARRY_TILE); passing a
+// batch*m-sized buffer (as bigmul_batch does) is always large enough.
+auto carry_and_assemble_batch(const uint64_t* d_conv, uint32_t* d_result, int n, int m, int batch,
+                              uint64_t* d_scratch) -> void;
