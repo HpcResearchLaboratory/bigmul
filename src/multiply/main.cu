@@ -81,15 +81,50 @@ static auto run_batch() -> int {
   return 0;
 }
 
+// Same batching idea as flush_batch/run_batch, but over the binary
+// per-record protocol: each record carries its own n, so pairs are padded
+// to the group's largest n before the single bigmul_batch() call, and each
+// record's output is truncated back to its own 2*n limbs (safe, since the
+// extra high limbs contributed by padding are all zero and can't affect
+// the low 2*n limbs of the product).
+static auto flush_binary_batch(std::vector<std::vector<uint32_t>>& pending_a,
+                               std::vector<std::vector<uint32_t>>& pending_b) -> void {
+  int batch = (int)pending_a.size();
+  if (batch == 0) return;
+
+  size_t n = 1;
+  for (int i = 0; i < batch; i++) n = std::max({n, pending_a[i].size(), pending_b[i].size()});
+
+  std::vector<uint32_t> a_buf((size_t)batch * n, 0), b_buf((size_t)batch * n, 0);
+  std::vector<uint32_t> result_buf((size_t)batch * 2 * n, 0);
+  for (int i = 0; i < batch; i++) {
+    std::copy(pending_a[i].begin(), pending_a[i].end(), a_buf.begin() + (size_t)i * n);
+    std::copy(pending_b[i].begin(), pending_b[i].end(), b_buf.begin() + (size_t)i * n);
+  }
+
+  bigmul_batch(a_buf.data(), b_buf.data(), result_buf.data(), (int)n, batch);
+
+  for (int i = 0; i < batch; i++) {
+    size_t out_n = 2 * pending_a[i].size();
+    fwrite(result_buf.data() + (size_t)i * 2 * n, sizeof(uint32_t), out_n, stdout);
+  }
+
+  pending_a.clear();
+  pending_b.clear();
+}
+
 static auto run_binary() -> int {
   uint32_t n;
+  std::vector<std::vector<uint32_t>> pending_a, pending_b;
   while (fread(&n, sizeof(n), 1, stdin) == 1) {
-    std::vector<uint32_t> a(n), b(n), result(2 * n, 0);
+    std::vector<uint32_t> a(n), b(n);
     fread(a.data(), sizeof(uint32_t), n, stdin);
     fread(b.data(), sizeof(uint32_t), n, stdin);
-    bigmul(a.data(), b.data(), result.data(), n);
-    fwrite(result.data(), sizeof(uint32_t), 2 * n, stdout);
+    pending_a.push_back(std::move(a));
+    pending_b.push_back(std::move(b));
+    if ((int)pending_a.size() == MAX_GPU_BATCH) flush_binary_batch(pending_a, pending_b);
   }
+  flush_binary_batch(pending_a, pending_b);
   return 0;
 }
 
